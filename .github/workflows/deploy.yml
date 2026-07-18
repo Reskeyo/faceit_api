@@ -33,8 +33,13 @@ jobs:
         env:
           FACEIT_API_KEY: ${{ secrets.FACEIT_API_KEY }}
         run: |
-          # Use sed to safely substitute the placeholder in app.js with the GitHub secret
-          sed -i "s|__FACEIT_API_KEY__|${FACEIT_API_KEY}|g" app.js
+          # Use Node.js to safely replace the placeholder, preventing shell escape or special character issues (like slashes or pipe symbols)
+          node -e "
+            const fs = require('fs');
+            let content = fs.readFileSync('app.js', 'utf8');
+            content = content.replaceAll('__FACEIT_API_KEY__', process.env.FACEIT_API_KEY || '');
+            fs.writeFileSync('app.js', content, 'utf8');
+          "
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
