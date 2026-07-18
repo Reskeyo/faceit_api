@@ -34,7 +34,7 @@
                     <form id="search-form" onsubmit="handleSearchSubmit(event)">
                         <div class="search-bar-row">
                             <input type="text" id="nickname-search" placeholder="Enter FACEIT Nickname (e.g. s1mple)" required>
-                            <button type="submit" class="btn btn-primary search-btn">
+                            <button type="submit" class="btn btn-primary search-btn" id="search-submit-btn">
                                 <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="11" cy="11" r="8"/>
                                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -42,22 +42,29 @@
                                 Search Stats
                             </button>
                         </div>
+                        <div class="manual-mode-row spacer-y-sm">
+                            <label class="switch-container">
+                                <input type="checkbox" id="manual-mode-toggle" onchange="toggleManualMode(this.checked)">
+                                <span class="switch-slider"></span>
+                                <span class="switch-label">Manual Mode (Bypass API Key Block)</span>
+                            </label>
+                        </div>
                     </form>
                 </div>
             </div>
         </section>
 
-        <!-- Developer API Key Warning Alert (Shown if key is not configured) -->
+        <!-- Developer API Key Warning Alert (Shown if key is not configured and manual mode is off) -->
         <div class="card warning-card spacer-y-md" id="dev-warning-card" style="display: none;">
             <div class="card-body text-center">
                 <div class="warning-large-icon">⚠️</div>
-                <h3>Developer Setup Required</h3>
+                <h3>FACEIT API Key Required</h3>
                 <p class="description-text">
-                    To enable automatic statistics tracking, you need to add your FACEIT API Key in <code class="code-highlight">app.js</code> on <strong>line 2</strong>.
+                    To fetch CS2 player statistics automatically, configure your API Key. Alternatively, toggle **Manual Mode** above to enter your stats manually.
                 </p>
                 <p class="text-sm muted">
-                    Open <code class="code-highlight">app.js</code>, find <code class="code-highlight">const DEFAULT_API_KEY = "PASTE_YOUR_API_KEY_HERE";</code>, and replace it with your key.
-                    Refer to the guide at the bottom of the page on how to get a free key.
+                    If you already have a key, open <code class="code-highlight">app.js</code>, find <code class="code-highlight">const DEFAULT_API_KEY</code>, and paste it.
+                    If the Developer Portal is down, please use **Manual Mode** to use the infraction logger and penalty calculator.
                 </p>
             </div>
         </div>
@@ -94,6 +101,25 @@
                             <span class="value streak-text" id="streak-value">0</span>
                         </div>
                     </div>
+
+                    <!-- Manual input block for stats (Visible only in Manual Mode) -->
+                    <div id="manual-stats-inputs" class="manual-inputs-block" style="display: none;">
+                        <h4 class="manual-header">Update Stats Manually</h4>
+                        <div class="inputs-grid">
+                            <div class="input-inline">
+                                <label for="m-level">Level</label>
+                                <input type="number" id="m-level" min="1" max="10" value="3" onchange="updateManualStat('level', this.value)">
+                            </div>
+                            <div class="input-inline">
+                                <label for="m-elo">Elo</label>
+                                <input type="number" id="m-elo" min="100" max="4000" value="1000" onchange="updateManualStat('elo', this.value)">
+                            </div>
+                            <div class="input-inline">
+                                <label for="m-streak">Streak</label>
+                                <input type="number" id="m-streak" min="-20" max="20" value="0" onchange="updateManualStat('streak', this.value)">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -119,6 +145,28 @@
                         <div class="stat-box">
                             <span class="stat-label">Average K/D</span>
                             <span class="stat-val" id="stat-avg-kd">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Manual input block for detail stats (Visible only in Manual Mode) -->
+                    <div id="manual-stats-details" class="manual-inputs-block" style="display: none;">
+                        <div class="inputs-grid">
+                            <div class="input-inline">
+                                <label for="m-matches">Matches</label>
+                                <input type="number" id="m-matches" min="0" value="100" onchange="updateManualStat('matches', this.value)">
+                            </div>
+                            <div class="input-inline">
+                                <label for="m-winrate">Win Rate %</label>
+                                <input type="number" id="m-winrate" min="0" max="100" value="50" onchange="updateManualStat('winrate', this.value)">
+                            </div>
+                            <div class="input-inline">
+                                <label for="m-kd">K/D Ratio</label>
+                                <input type="number" id="m-kd" step="0.01" min="0" value="1.05" onchange="updateManualStat('kd', this.value)">
+                            </div>
+                            <div class="input-inline">
+                                <label for="m-avg-kd">Avg K/D</label>
+                                <input type="number" id="m-avg-kd" step="0.01" min="0" value="1.05" onchange="updateManualStat('avgKd', this.value)">
+                            </div>
                         </div>
                     </div>
                 </div>

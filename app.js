@@ -6,10 +6,20 @@ const DEFAULT_API_KEY = "__FACEIT_API_KEY__";
 // Application State
 let state = {
     config: {
-        nickname: ''
+        nickname: '',
+        manualMode: false
     },
     infractions: [], // Array of { id, type, timestamp }
     activeBan: null, // { expiresAt }
+    manualStats: {
+        level: 3,
+        elo: 1000,
+        streak: 0,
+        matches: 100,
+        winrate: 50,
+        kd: 1.05,
+        avgKd: 1.05
+    },
     activeHistoryTab: 'active' // 'active' or 'expired'
 };
 
@@ -45,7 +55,9 @@ window.addEventListener('DOMContentLoaded', () => {
     // Auto-fetch if nickname exists and API key is set
     if (state.config.nickname) {
         document.getElementById('nickname-search').value = state.config.nickname;
-        if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__") {
+        if (state.config.manualMode) {
+            updateUI();
+        } else if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__") {
             fetchStats();
         }
     }
@@ -56,6 +68,12 @@ function checkApiKeySetup() {
     const warningCard = document.getElementById('dev-warning-card');
     const isConfigured = DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__";
     
+    // If manual mode is enabled, we bypass the API key alert
+    if (state.config.manualMode) {
+        warningCard.style.display = 'none';
+        return true;
+    }
+
     if (!isConfigured) {
         warningCard.style.display = 'block';
         document.getElementById('stats-dashboard').style.display = 'none';
@@ -76,6 +94,24 @@ function loadFromLocalStorage() {
 
     const savedActiveBan = localStorage.getItem('faceit_active_ban');
     if (savedActiveBan) state.activeBan = JSON.parse(savedActiveBan);
+
+    const savedManualStats = localStorage.getItem('faceit_manual_stats');
+    if (savedManualStats) state.manualStats = JSON.parse(savedManualStats);
+
+    // Sync HTML Form elements
+    document.getElementById('nickname-search').value = state.config.nickname || '';
+    document.getElementById('manual-mode-toggle').checked = state.config.manualMode || false;
+
+    // Populate manual inputs
+    document.getElementById('m-level').value = state.manualStats.level;
+    document.getElementById('m-elo').value = state.manualStats.elo;
+    document.getElementById('m-streak').value = state.manualStats.streak;
+    document.getElementById('m-matches').value = state.manualStats.matches;
+    document.getElementById('m-winrate').value = state.manualStats.winrate;
+    document.getElementById('m-kd').value = state.manualStats.kd;
+    document.getElementById('m-avg-kd').value = state.manualStats.avgKd;
+
+    toggleManualModeUI(state.config.manualMode);
 }
 
 // Save state to localStorage
@@ -88,6 +124,51 @@ function setupEventListeners() {
     // Search form submissions
 }
 
+// Toggle manual mode and show/hide manual controls
+function toggleManualMode(enabled) {
+    state.config.manualMode = enabled;
+    saveState('faceit_config_v2', state.config);
+    toggleManualModeUI(enabled);
+    updateUI();
+}
+
+function toggleManualModeUI(enabled) {
+    const manualStatsInputs = document.getElementById('manual-stats-inputs');
+    const manualStatsDetails = document.getElementById('manual-stats-details');
+    const matchesSection = document.getElementById('matches-section');
+
+    if (enabled) {
+        manualStatsInputs.style.display = 'block';
+        manualStatsDetails.style.display = 'block';
+        matchesSection.style.display = 'none'; // Hide matches in manual mode
+        document.getElementById('stats-dashboard').style.display = 'grid';
+    } else {
+        manualStatsInputs.style.display = 'none';
+        manualStatsDetails.style.display = 'none';
+        matchesSection.style.display = 'block';
+        // Hide dashboard on API mode if search nickname is empty
+        if (!state.config.nickname) {
+            document.getElementById('stats-dashboard').style.display = 'none';
+            document.getElementById('matches-section').style.display = 'none';
+        }
+    }
+    checkApiKeySetup();
+}
+
+// Update manual statistics input
+function updateManualStat(statName, value) {
+    let parsedValue = parseFloat(value);
+    if (statName === 'level' || statName === 'elo' || statName === 'streak' || statName === 'matches' || statName === 'winrate') {
+        parsedValue = parseInt(value) || 0;
+    } else {
+        parsedValue = parseFloat(value) || 0;
+    }
+    
+    state.manualStats[statName] = parsedValue;
+    saveState('faceit_manual_stats', state.manualStats);
+    updateUI();
+}
+
 // Handle nickname search submit
 function handleSearchSubmit(event) {
     event.preventDefault();
@@ -97,7 +178,9 @@ function handleSearchSubmit(event) {
     state.config.nickname = query;
     saveState('faceit_config_v2', state.config);
     
-    if (checkApiKeySetup()) {
+    if (state.config.manualMode) {
+        updateUI();
+    } else if (checkApiKeySetup()) {
         fetchStats();
     }
 }
@@ -417,12 +500,40 @@ function getExpiredInfractions() {
 function updateUI() {
     const active = getActiveInfractions();
 
+    // Renders Stats Profile (If Manual Mode is active)
+    if (state.config.manualMode) {
+        document.getElementById('user-name').innerText = state.config.nickname || 'Guest Player';
+        document.getElementById('user-country').innerText = 'Manual';
+        document.getElementById('user-avatar').src = 'https://images.faceit.com/images/avatars/default_avatar.png';
+        
+        document.getElementById('elo-value').innerText = state.manualStats.elo;
+        updateLevelBadge(state.manualStats.level);
+
+        const streakVal = state.manualStats.streak;
+        const streakEl = document.getElementById('streak-value');
+        if (streakVal > 0) {
+            streakEl.className = 'value text-green bold';
+            streakEl.innerText = `+${streakVal}`;
+        } else if (streakVal < 0) {
+            streakEl.className = 'value text-red bold';
+            streakEl.innerText = `${streakVal}`;
+        } else {
+            streakEl.className = 'value muted';
+            streakEl.innerText = '0';
+        }
+
+        document.getElementById('stat-matches').innerText = state.manualStats.matches;
+        document.getElementById('stat-winrate').innerText = `${state.manualStats.winrate}%`;
+        document.getElementById('stat-kd').innerText = state.manualStats.kd.toFixed(2);
+        document.getElementById('stat-avg-kd').innerText = state.manualStats.avgKd.toFixed(2);
+    }
+
     // Update Predictor values
     const activeCount = active.length;
     document.getElementById('active-infractions-count').innerText = activeCount;
 
-    const nextPenaltyIndex = Math.min(activeCount, INFRACTION_ESCALATION.length - 1);
-    const nextCooldownObj = INFRACTION_ESCALATION[nextPenaltyIndex];
+    const nextTimeIndex = Math.min(activeCount, INFRACTION_ESCALATION.length - 1);
+    const nextCooldownObj = INFRACTION_ESCALATION[nextTimeIndex];
     document.getElementById('next-cooldown-time').innerText = nextCooldownObj.durationText;
 
     // Build the Ban Escalation Ladder UI
@@ -552,6 +663,7 @@ function hideBanSetter() {
     document.getElementById('ban-setter-form').style.display = 'none';
 }
 
+// Start custom countdown active ban
 function startCustomBan() {
     const value = parseInt(document.getElementById('ban-set-value').value) || 0;
     const unit = document.getElementById('ban-set-unit').value;
@@ -659,12 +771,15 @@ function importData(event) {
                 saveState('faceit_config_v2', state.config);
                 saveState('faceit_infractions', state.infractions);
                 saveState('faceit_active_ban', state.activeBan);
+                saveState('faceit_manual_stats', state.manualStats);
                 
                 // Refresh inputs in HTML Form
                 document.getElementById('nickname-search').value = state.config.nickname || '';
+                document.getElementById('manual-mode-toggle').checked = state.config.manualMode || false;
+                toggleManualModeUI(state.config.manualMode);
 
                 updateUI();
-                if (checkApiKeySetup() && state.config.nickname) {
+                if (!state.config.manualMode && checkApiKeySetup() && state.config.nickname) {
                     fetchStats();
                 }
                 alert('Backup data successfully imported!');
@@ -684,18 +799,21 @@ function clearAllData() {
     if (confirm('Are you sure you want to reset all data? This will clear your query settings and your entire logged infraction history.')) {
         localStorage.clear();
         state = {
-            config: { nickname: '' },
+            config: { nickname: '', manualMode: false },
             infractions: [],
             activeBan: null,
+            manualStats: { level: 3, elo: 1000, streak: 0, matches: 100, winrate: 50, kd: 1.05, avgKd: 1.05 },
             activeHistoryTab: 'active'
         };
         
         document.getElementById('nickname-search').value = '';
+        document.getElementById('manual-mode-toggle').checked = false;
         
         // Hide dashboard
         document.getElementById('stats-dashboard').style.display = 'none';
         document.getElementById('matches-section').style.display = 'none';
 
+        toggleManualModeUI(false);
         updateUI();
         
         if (banCountdownInterval) clearInterval(banCountdownInterval);
