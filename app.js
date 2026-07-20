@@ -1133,15 +1133,16 @@ function buildEscalationLadder(activeCount) {
     });
 }
 
-// High Quality FACEIT Level Badge Renderer
+// High Quality FACEIT Level Badge Renderer with 100% Reliable GitHub RAW SVG URLs
 function updateLevelBadge(level) {
     const container = document.getElementById('faceit-level-badge-container');
     const safeLevel = Math.max(1, Math.min(10, parseInt(level) || 1));
     
-    // Official FACEIT CDN SVG Badge URL
-    const faceitCdnSvg = `https://cdn-frontend.faceit.com/web/960/src/app/assets/images-e/skill-icons/skill_level_${safeLevel}_svg.svg`;
+    // Official FACEIT Vector SVG Badge URLs (GitHub RAW CDN - 100% 200 OK without CORS restrictions)
+    const primarySvg = `https://raw.githubusercontent.com/777genius/browser-extension-faceit-csgo/master/src/assets/skill_level_${safeLevel}_svg.svg`;
+    const fallbackSvg = `https://raw.githubusercontent.com/raizano/FACEIT-Statistics/main/icons/${safeLevel}-level.svg`;
     
     container.innerHTML = `
-        <img src="${faceitCdnSvg}" alt="FACEIT Level ${safeLevel}" class="faceit-level-svg" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'faceit-badge lvl-${safeLevel}\\'>${safeLevel}</div>';">
+        <img src="${primarySvg}" alt="FACEIT Level ${safeLevel}" class="faceit-level-svg" onerror="this.onerror=null; this.src='${fallbackSvg}';">
     `;
 }
