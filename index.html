@@ -415,7 +415,10 @@
                                 <span class="prediction-label">Next Infraction Ban Duration</span>
                                 <span class="prediction-time" id="next-cooldown-time">30 Minutes</span>
                                 <p class="prediction-desc">
-                                    Based on <strong id="active-infractions-count">0</strong> active infractions in your consecutive 30-day escalation chain.
+                                    Based on <strong id="active-infractions-count">0</strong> detected warmup abandons (0 kills / 0 deaths) in scanned match history within the rolling 30-day window.
+                                </p>
+                                <p class="prediction-desc" style="opacity: 0.6; font-size: 0.8em; margin-top: 6px;">
+                                    ⚠️ Note: FACEIT's leaver flag is stored in an internal (non-public) API — mid-game disconnects like the "LEAVER" tag visible on the website cannot be detected via the public Data API. Only warmup-failed-to-connect abandons are detectable.
                                 </p>
                             </div>
                             
@@ -505,10 +508,13 @@
                     </details>
 
                     <details class="faq-item">
-                        <summary>Why didn't my recent Leaver cooldown show up in official ban history?</summary>
+                        <summary>Why didn't my recent Leaver cooldown show up?</summary>
                         <div class="faq-content">
                             <p>
-                                FACEIT's public <code class="code-highlight">/bans</code> API endpoint primarily returns long-term admin bans (e.g. Verbal Abuse, Admin Bans). Short automated queue/leaver bans (30m, 2h) are removed by FACEIT's database after expiration. Our application automatically scans your <strong>recent match logs</strong> for DNF/Leaver flags to calculate your true escalation level!
+                                FACEIT's public <code class="code-highlight">/bans</code> API endpoint only returns <strong>currently active bans</strong>. Expired bans (even from hours ago) are permanently removed from the API response.
+                            </p>
+                            <p style="margin-top: 8px;">
+                                Additionally, the <strong>"LEAVER" tag</strong> you see on FACEIT's scoreboard (e.g. when a player leaves mid-game after getting kills) is stored in a <strong>private, authenticated internal API</strong> that is not accessible via the public Developer API. This means we cannot retrieve mid-game disconnect events through the public Data API — only warmup abandons (where the player has 0 kills AND 0 deaths in a completed match) can be detected reliably.
                             </p>
                         </div>
                     </details>
