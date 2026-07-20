@@ -84,16 +84,15 @@ function handleSearchSubmit(event) {
     }
 }
 
-// Core Fetching Mechanism (API calls bypass CORS using corsproxy.io)
+// Core Fetching Mechanism (Direct API calls to open.faceit.com)
 async function faceitFetch(endpoint) {
     if (!DEFAULT_API_KEY || DEFAULT_API_KEY === "3563d522-b38e-464a-b65f-1e13ef363871") {
         throw new Error('FACEIT API Key is not configured.');
     }
 
     const targetUrl = `https://open.faceit.com/data/v4/${endpoint}`;
-    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
 
-    const response = await fetch(proxyUrl, {
+    const response = await fetch(targetUrl, {
         method: 'GET',
         headers: {
             'Authorization': `Bearer ${DEFAULT_API_KEY}`,
