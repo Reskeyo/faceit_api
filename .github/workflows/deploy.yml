@@ -18,6 +18,7 @@ concurrency:
 
 jobs:
   build:
+    environment: github-pages
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -33,7 +34,7 @@ jobs:
             const key = (process.env.SECRET_KEY || process.env.VAR_KEY || '').trim();
             console.log('FACEIT_API_KEY length:', key.length);
             if (key.length === 0) {
-              console.log('WARNING: Neither secrets.FACEIT_API_KEY nor vars.FACEIT_API_KEY was found in build job.');
+              console.log('WARNING: Key empty in build job.');
             } else {
               console.log('SUCCESS: API key successfully injected into app.js!');
             }
