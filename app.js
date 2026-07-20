@@ -1,19 +1,26 @@
 // Cloudflare Worker proxy URL
 // This is the public URL of your deployed Worker — the API key lives only in the Worker (server-side).
-// Replace this with your actual Worker URL after running: wrangler deploy
-const WORKER_URL = "__WORKER_URL__";
+const WORKER_URL = "https://faceit-proxy.dolinskzyyvictor.workers.dev";
 
 // Application State
 let state = {
     nickname: '',
     player: null,
     stats: null,
-    matches: [],
-    bans: []
+    detailedMatches: [],
+    bans: [],
+    matchFilters: {
+        map: 'ALL',
+        result: 'ALL',
+        leaverOnly: false
+    },
+    activeTab: 'tab-overview'
 };
 
-// Global Timers
+// Global Timers & Chart Instances
 let banCountdownInterval = null;
+let kdChartInstance = null;
+let mapWinrateChartInstance = null;
 
 // Constants
 const ROLLING_WINDOW_DAYS = 30;
@@ -43,10 +50,33 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Check if the Cloudflare Worker proxy URL is configured
+// Tab Switching Mechanism
+function switchTab(tabId) {
+    state.activeTab = tabId;
+
+    // Toggle navigation tab buttons active class
+    const tabButtons = document.querySelectorAll('.nav-tab-btn');
+    tabButtons.forEach(btn => {
+        if (btn.dataset.tab === tabId) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    // Toggle tab content sections
+    const tabSections = document.querySelectorAll('.tab-content');
+    tabSections.forEach(section => {
+        if (section.id === tabId) {
+            section.style.display = 'block';
+        } else {
+            section.style.display = 'none';
+        }
+    });
+}
+
+// Retrieve Worker URL: checks injected constant first, then local storage
 function getWorkerUrl() {
-    // If built by GitHub Actions, WORKER_URL is replaced with the real URL.
-    // Otherwise fall back to a localStorage override (for local dev).
     if (WORKER_URL && WORKER_URL.length > 0 && !WORKER_URL.startsWith('__')) {
         return WORKER_URL.trim().replace(/\/$/, '');
     }
@@ -65,17 +95,20 @@ function checkApiKeySetup() {
     
     if (!isConfigured) {
         warningCard.style.display = 'block';
-        document.getElementById('stats-dashboard').style.display = 'none';
-        document.getElementById('matches-section').style.display = 'none';
-        document.getElementById('penalty-section').style.display = 'none';
-        document.getElementById('ban-history-section').style.display = 'none';
+        document.getElementById('app-nav-tabs').style.display = 'none';
+        hideAllTabContents();
     } else {
         warningCard.style.display = 'none';
     }
     return isConfigured;
 }
 
-// Save user entered Worker URL into local storage (for local dev/override)
+function hideAllTabContents() {
+    const tabSections = document.querySelectorAll('.tab-content');
+    tabSections.forEach(section => section.style.display = 'none');
+}
+
+// Save user entered Worker URL into local storage
 function saveUserApiKey() {
     const input = document.getElementById('user-api-key-input');
     const val = input ? input.value.trim() : '';
@@ -92,13 +125,6 @@ function saveUserApiKey() {
             alert('Worker URL saved! Enter your FACEIT Nickname above and click Search Player.');
         }
     }
-}
-
-// Reset saved API Key
-function resetApiKey() {
-    localStorage.removeItem('faceit_api_key_v1');
-    checkApiKeySetup();
-    alert('Saved API Key cleared.');
 }
 
 // Load state from localStorage
@@ -126,7 +152,7 @@ function handleSearchSubmit(event) {
     }
 }
 
-// Core Fetching Mechanism — routes through Cloudflare Worker proxy (key stays server-side)
+// Core Fetching Mechanism — routes through Cloudflare Worker proxy
 async function faceitFetch(endpoint) {
     const workerUrl = getWorkerUrl();
     if (!workerUrl) {
@@ -158,17 +184,12 @@ async function fetchStats() {
     const nickname = state.nickname;
     if (!nickname) return;
 
-    // Show containers
-    document.getElementById('stats-dashboard').style.display = 'grid';
-    document.getElementById('matches-section').style.display = 'block';
-    document.getElementById('penalty-section').style.display = 'grid';
-    document.getElementById('ban-history-section').style.display = 'block';
-
-    // Show loaders
-    document.getElementById('profile-loading').style.display = 'flex';
-    document.getElementById('profile-display').style.display = 'none';
-    document.getElementById('matches-loading').style.display = 'block';
-    document.getElementById('matches-table-container').style.display = 'none';
+    // Show Global Loader & Tab Bar
+    document.getElementById('global-loading').style.display = 'block';
+    document.getElementById('loading-text').innerText = `Fetching profile & statistics for ${nickname}...`;
+    document.getElementById('app-nav-tabs').style.display = 'flex';
+    
+    hideAllTabContents();
 
     try {
         // Step 1: Fetch player main info
@@ -178,7 +199,7 @@ async function fetchStats() {
         
         // Map profile details
         document.getElementById('user-name').innerText = playerProfile.nickname || nickname;
-        document.getElementById('user-country').innerText = playerProfile.country || 'EU';
+        document.getElementById('user-country').innerText = playerProfile.country ? playerProfile.country.toUpperCase() : 'EU';
         if (playerProfile.avatar) {
             document.getElementById('user-avatar').src = playerProfile.avatar;
         }
@@ -190,7 +211,7 @@ async function fetchStats() {
         document.getElementById('elo-value').innerText = elo;
         updateLevelBadge(skillLevel);
 
-        // Step 2: Fetch CS2 Stats
+        // Step 2: Fetch CS2 Lifetime & Map Stats
         let cs2Stats = null;
         try {
             cs2Stats = await faceitFetch(`players/${player_id}/stats/cs2`);
@@ -200,14 +221,33 @@ async function fetchStats() {
         }
 
         if (cs2Stats && cs2Stats.lifetime) {
-            const matches = cs2Stats.lifetime.Matches || '0';
-            const winRate = cs2Stats.lifetime['Win Rate %'] ? `${cs2Stats.lifetime['Win Rate %']}%` : '0%';
-            const kd = cs2Stats.lifetime['Average K/D Ratio'] || '0.00';
-            const streak = cs2Stats.lifetime['Current Win Streak'] || '0';
+            const lifetime = cs2Stats.lifetime;
+            const matches = lifetime.Matches || '0';
+            const winRate = lifetime['Win Rate %'] ? `${lifetime['Win Rate %']}%` : '0%';
+            const kd = lifetime['Average K/D Ratio'] || '0.00';
+            const streak = lifetime['Current Win Streak'] || '0';
+            const hsPct = lifetime['Average Headshots %'] ? `${lifetime['Average Headshots %']}%` : '0%';
+            const totalKills = lifetime['Total Kills'] || '-';
+            const kr = lifetime['Average K/R Ratio'] || '-';
+            const longestStreak = lifetime['Longest Win Streak'] || '-';
+            
+            const k3 = lifetime['Triple Kills'] || '0';
+            const k4 = lifetime['Quadro Kills'] || '0';
+            const k5 = lifetime['Penta Kills'] || lifetime['Aces'] || '0';
 
             document.getElementById('stat-matches').innerText = matches;
             document.getElementById('stat-winrate').innerText = winRate;
             document.getElementById('stat-kd').innerText = kd;
+            document.getElementById('stat-hs-pct').innerText = hsPct;
+
+            document.getElementById('stat-total-kills').innerText = totalKills;
+            document.getElementById('stat-kr').innerText = kr;
+            document.getElementById('stat-headshots-pct-deep').innerText = hsPct;
+            document.getElementById('stat-longest-streak').innerText = longestStreak;
+
+            document.getElementById('stat-3k').innerText = k3;
+            document.getElementById('stat-4k').innerText = k4;
+            document.getElementById('stat-5k').innerText = k5;
 
             const streakVal = parseInt(streak) || 0;
             const streakEl = document.getElementById('streak-value');
@@ -221,48 +261,41 @@ async function fetchStats() {
                 streakEl.className = 'value muted';
                 streakEl.innerText = '0';
             }
-        } else {
-            document.getElementById('stat-matches').innerText = '-';
-            document.getElementById('stat-winrate').innerText = '-';
-            document.getElementById('stat-kd').innerText = '-';
-            document.getElementById('streak-value').innerText = '0';
-            document.getElementById('streak-value').className = 'value muted';
+
+            // Render Map Stats Table
+            if (cs2Stats.segments) {
+                renderMapStatsTable(cs2Stats.segments);
+                renderMapWinrateChart(cs2Stats.segments);
+            }
         }
 
-        // Step 3: Fetch Recent Matches and Player Bans in Parallel
-        await Promise.all([
-            fetchMatchHistory(player_id),
-            fetchPlayerBans(player_id)
-        ]);
+        // Step 3: Fetch Recent Matches (Limit 20 for deep history analysis)
+        await fetchMatchHistory(player_id);
 
-        document.getElementById('profile-loading').style.display = 'none';
-        document.getElementById('profile-display').style.display = 'block';
+        // Step 4: Fetch Bans & Run Enhanced Infraction Detector
+        await fetchPlayerBans(player_id);
+
+        // Hide Global Loader & Show Active Tab
+        document.getElementById('global-loading').style.display = 'none';
+        switchTab(state.activeTab);
 
     } catch (error) {
         console.error(error);
         alert(`Error loading data: ${error.message}`);
-        
-        document.getElementById('profile-loading').style.display = 'none';
-        document.getElementById('profile-display').style.display = 'block';
-        document.getElementById('matches-loading').style.display = 'none';
-        document.getElementById('matches-table-container').style.display = 'block';
+        document.getElementById('global-loading').style.display = 'none';
+        switchTab('tab-overview');
     }
 }
 
-// Fetch Match History (Last 5 matches)
+// Fetch Detailed Match History (20 Matches)
 async function fetchMatchHistory(player_id) {
     try {
-        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=5`);
+        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=20`);
         const matches = historyData.items || [];
-        state.matches = matches;
-        
-        const listContainer = document.getElementById('matches-list');
-        listContainer.innerHTML = '';
 
         if (matches.length === 0) {
-            listContainer.innerHTML = `<tr><td colspan="6" class="text-center muted">No CS2 matches recorded in history.</td></tr>`;
-            document.getElementById('matches-loading').style.display = 'none';
-            document.getElementById('matches-table-container').style.display = 'block';
+            state.detailedMatches = [];
+            renderMatchHistoryTables([]);
             return;
         }
 
@@ -276,113 +309,261 @@ async function fetchMatchHistory(player_id) {
         });
 
         const detailedMatches = await Promise.all(detailPromises);
-        let firstAvgKd = 0;
-        let validKdCount = 0;
-
-        detailedMatches.forEach(({ match, details }) => {
-            const date = new Date(match.finished_at * 1000).toLocaleDateString();
+        
+        // Parse match objects
+        const parsedMatches = detailedMatches.map(({ match, details }) => {
+            const dateObj = new Date(match.finished_at * 1000);
+            const date = dateObj.toLocaleDateString();
+            const time = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            
             let mapName = 'Unknown';
             let score = '-';
             let result = 'L';
-            let kills = '-';
-            let deaths = '-';
-            let kdRatio = '-';
+            let kills = 0;
+            let deaths = 0;
+            let kdRatio = '0.00';
+            let isLeaverOrDnf = false;
+            let dnfReason = '';
 
             if (details && details.rounds && details.rounds.length > 0) {
                 const round = details.rounds[0];
-                mapName = round.round_stats.Map.replace('de_', '').toUpperCase();
+                mapName = round.round_stats.Map ? round.round_stats.Map.replace('de_', '').toUpperCase() : 'UNKNOWN';
                 score = round.round_stats.Score || '-';
                 
+                let foundPlayer = false;
                 for (const team of round.teams) {
                     const p = team.players.find(player => player.player_id === player_id);
                     if (p) {
-                        kills = p.player_stats.Kills || '0';
-                        deaths = p.player_stats.Deaths || '0';
-                        kdRatio = p.player_stats['K/D Ratio'] || '0.00';
+                        foundPlayer = true;
+                        kills = parseInt(p.player_stats.Kills) || 0;
+                        deaths = parseInt(p.player_stats.Deaths) || 0;
+                        kdRatio = p.player_stats['K/D Ratio'] || (deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2));
                         
                         const winFlag = p.player_stats.Result;
                         result = winFlag === '1' ? 'W' : 'L';
                         
-                        const parsedKd = parseFloat(kdRatio);
-                        if (!isNaN(parsedKd)) {
-                            firstAvgKd += parsedKd;
-                            validKdCount++;
+                        // Check for DNF or Leaver markers in player match stats
+                        if (p.player_stats.DNFFlag === '1' || p.player_stats.Leaver === '1' || p.player_stats.Status === 'DNF') {
+                            isLeaverOrDnf = true;
+                            dnfReason = 'Leaver / Abandoned';
                         }
                         break;
                     }
                 }
+
+                // If player was not found in round stats or had 0 stats in a full match
+                const totalRounds = parseInt(round.round_stats.Rounds) || 16;
+                if (!foundPlayer || (kills === 0 && deaths === 0 && totalRounds > 5)) {
+                    isLeaverOrDnf = true;
+                    dnfReason = 'Disconnected / DNF';
+                }
             } else {
-                const f1Score = match.results.score.faction1;
-                const f2Score = match.results.score.faction2;
+                const f1Score = match.results ? match.results.score.faction1 : 0;
+                const f2Score = match.results ? match.results.score.faction2 : 0;
                 score = `${f1Score} - ${f2Score}`;
-                result = 'L'; 
+                result = 'L';
+                isLeaverOrDnf = true;
+                dnfReason = 'Match Abandoned';
             }
 
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${date}</td>
-                <td><span class="map-badge">${mapName}</span></td>
-                <td>${score}</td>
-                <td><span class="result-badge ${result === 'W' ? 'win' : 'loss'}">${result === 'W' ? 'WIN' : 'LOSS'}</span></td>
-                <td>${kills} <span class="muted">/</span> ${deaths}</td>
-                <td class="font-mono ${parseFloat(kdRatio) >= 1.0 ? 'text-green' : 'text-red'}">${kdRatio}</td>
-            `;
-            listContainer.appendChild(row);
+            return {
+                match_id: match.match_id,
+                timestamp: match.finished_at * 1000,
+                date,
+                time,
+                mapName,
+                rawMap: (details && details.rounds && details.rounds[0] && details.rounds[0].round_stats.Map) || 'de_unknown',
+                score,
+                result,
+                kills,
+                deaths,
+                kdRatio: parseFloat(kdRatio),
+                isLeaverOrDnf,
+                dnfReason
+            };
         });
 
-        if (validKdCount > 0) {
-            const calculatedAvg = (firstAvgKd / validKdCount).toFixed(2);
-            document.getElementById('stat-avg-kd').innerText = calculatedAvg;
-        } else {
-            document.getElementById('stat-avg-kd').innerText = '-';
-        }
-
-        document.getElementById('matches-loading').style.display = 'none';
-        document.getElementById('matches-table-container').style.display = 'block';
+        state.detailedMatches = parsedMatches;
+        
+        // Render Overview & Full Matches
+        renderMatchHistoryTables(parsedMatches);
+        renderKdTrendChart(parsedMatches);
 
     } catch (err) {
         console.error('Error fetching match history details:', err);
-        document.getElementById('matches-list').innerHTML = `<tr><td colspan="6" class="text-center text-red">Failed to load match history details.</td></tr>`;
-        document.getElementById('matches-loading').style.display = 'none';
-        document.getElementById('matches-table-container').style.display = 'block';
+        state.detailedMatches = [];
+        renderMatchHistoryTables([]);
     }
 }
 
-// Fetch Player Ban History from FACEIT API
+// Render Overview Quick Matches & Full Filterable Match History Table
+function renderMatchHistoryTables(matches) {
+    // 1. Overview Table (Top 5)
+    const overviewList = document.getElementById('overview-matches-list');
+    overviewList.innerHTML = '';
+
+    const top5 = matches.slice(0, 5);
+    if (top5.length === 0) {
+        overviewList.innerHTML = `<tr><td colspan="5" class="text-center muted">No matches available.</td></tr>`;
+    } else {
+        top5.forEach(m => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${m.date}</td>
+                <td><span class="map-badge">${m.mapName}</span></td>
+                <td>${m.score}</td>
+                <td><span class="result-badge ${m.result === 'W' ? 'win' : 'loss'}">${m.result === 'W' ? 'WIN' : 'LOSS'}</span></td>
+                <td class="font-mono ${m.kdRatio >= 1.0 ? 'text-green' : 'text-red'}">${m.kdRatio.toFixed(2)}</td>
+            `;
+            overviewList.appendChild(row);
+        });
+    }
+
+    // 2. Full Match History Table
+    applyMatchFilters();
+}
+
+// Apply Filters to Full Match History Table
+function applyMatchFilters() {
+    const fullList = document.getElementById('matches-list-full');
+    fullList.innerHTML = '';
+
+    const mapFilter = document.getElementById('filter-map').value;
+    const resultFilter = document.getElementById('filter-result').value;
+    const leaverOnly = state.matchFilters.leaverOnly;
+
+    let filtered = state.detailedMatches.filter(m => {
+        if (mapFilter !== 'ALL' && !m.rawMap.toLowerCase().includes(mapFilter.toLowerCase())) {
+            return false;
+        }
+        if (resultFilter !== 'ALL' && m.result !== (resultFilter === 'WIN' ? 'W' : 'L')) {
+            return false;
+        }
+        if (leaverOnly && !m.isLeaverOrDnf) {
+            return false;
+        }
+        return true;
+    });
+
+    if (filtered.length === 0) {
+        fullList.innerHTML = `<tr><td colspan="7" class="text-center muted">No matches match the selected filters.</td></tr>`;
+        return;
+    }
+
+    filtered.forEach(m => {
+        const row = document.createElement('tr');
+        
+        let statusHtml = '<span class="badge grey">Completed</span>';
+        if (m.isLeaverOrDnf) {
+            statusHtml = `<span class="status-tag-dnf">⚠️ ${m.dnfReason || 'Leaver / DNF'}</span>`;
+        }
+
+        row.innerHTML = `
+            <td>${m.date} <span class="muted text-sm">${m.time}</span></td>
+            <td><span class="map-badge">${m.mapName}</span></td>
+            <td>${m.score}</td>
+            <td><span class="result-badge ${m.result === 'W' ? 'win' : 'loss'}">${m.result === 'W' ? 'WIN' : 'LOSS'}</span></td>
+            <td>${m.kills} <span class="muted">/</span> ${m.deaths}</td>
+            <td class="font-mono ${m.kdRatio >= 1.0 ? 'text-green' : 'text-red'}">${m.kdRatio.toFixed(2)}</td>
+            <td>${statusHtml}</td>
+        `;
+        fullList.appendChild(row);
+    });
+}
+
+// Toggle Leaver Only Filter Button
+function toggleLeaverFilter() {
+    state.matchFilters.leaverOnly = !state.matchFilters.leaverOnly;
+    const btn = document.getElementById('filter-leaver-btn');
+    if (state.matchFilters.leaverOnly) {
+        btn.classList.add('active');
+    } else {
+        btn.classList.remove('active');
+    }
+    applyMatchFilters();
+}
+
+// Render Map Statistics Table
+function renderMapStatsTable(segments) {
+    const container = document.getElementById('map-stats-rows');
+    container.innerHTML = '';
+
+    const mapSegments = segments.filter(s => s.type === 'Map' || s.mode === '5v5');
+    if (mapSegments.length === 0) {
+        container.innerHTML = `<tr><td colspan="6" class="text-center muted">No map statistics available.</td></tr>`;
+        return;
+    }
+
+    mapSegments.forEach(seg => {
+        const mapName = seg.label ? seg.label.replace('de_', '').toUpperCase() : 'UNKNOWN';
+        const matches = seg.stats.Matches || '0';
+        const winRate = seg.stats['Win Rate %'] ? `${seg.stats['Win Rate %']}%` : '0%';
+        const kd = seg.stats['Average K/D Ratio'] || '0.00';
+        const kr = seg.stats['Average K/R Ratio'] || '0.00';
+        const hs = seg.stats['Average Headshots %'] ? `${seg.stats['Average Headshots %']}%` : '0%';
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong class="text-orange">${mapName}</strong></td>
+            <td>${matches}</td>
+            <td class="text-green font-mono">${winRate}</td>
+            <td class="font-mono ${parseFloat(kd) >= 1.0 ? 'text-green' : 'text-red'}">${kd}</td>
+            <td class="font-mono">${kr}</td>
+            <td>${hs}</td>
+        `;
+        container.appendChild(row);
+    });
+}
+
+// Fetch Player Ban History & Run Enhanced 30-Day Infraction Detector
 async function fetchPlayerBans(player_id) {
+    let bans = [];
     try {
         const banData = await faceitFetch(`players/${player_id}/bans`);
-        const bans = banData.items || [];
+        bans = banData.items || [];
         state.bans = bans;
-
-        renderBansAndPredictor(bans);
     } catch (err) {
-        console.error('Error fetching player ban history:', err);
-        renderBansAndPredictor([]);
+        console.error('Error fetching official bans:', err);
     }
+
+    // Run combined infraction detector
+    renderBansAndPredictor(bans);
 }
 
-// Render Bans, Calculate Active Window & Escalation Ladder
-function renderBansAndPredictor(bans) {
+// Render Combined Infraction Escalation & 30-Day Window Predictor
+function renderBansAndPredictor(officialBans) {
     const now = Date.now();
     const cutoff30Days = now - ROLLING_WINDOW_MS;
 
-    const activeWindowBans = bans.filter(b => {
-        const banStart = parseTimestamp(b.starts_at || b.created_at);
-        return banStart >= cutoff30Days;
+    // 1. Official FACEIT bans in rolling 30-day window
+    const activeOfficialBans = officialBans.filter(b => {
+        const start = parseTimestamp(b.starts_at || b.created_at);
+        return start >= cutoff30Days;
     });
 
-    const activeCount = activeWindowBans.length;
-    document.getElementById('active-infractions-count').innerText = activeCount;
+    // 2. Detected Match Abandonments / Leavers from recent match history in rolling 30-day window
+    const activeLeaverMatches = state.detailedMatches.filter(m => {
+        return m.isLeaverOrDnf && m.timestamp >= cutoff30Days;
+    });
 
-    const nextTimeIndex = Math.min(activeCount, INFRACTION_ESCALATION.length - 1);
-    const nextCooldownObj = INFRACTION_ESCALATION[nextTimeIndex];
+    // Combined active infractions count
+    const totalInfractions = activeOfficialBans.length + activeLeaverMatches.length;
+
+    // Update UI counters
+    document.getElementById('active-infractions-count').innerText = totalInfractions;
+    document.getElementById('overview-infraction-badge').innerText = `${totalInfractions} Infractions (30d)`;
+
+    const nextIndex = Math.min(totalInfractions, INFRACTION_ESCALATION.length - 1);
+    const nextCooldownObj = INFRACTION_ESCALATION[nextIndex];
+
     document.getElementById('next-cooldown-time').innerText = nextCooldownObj.durationText;
+    document.getElementById('overview-next-cooldown').innerText = nextCooldownObj.durationText;
 
-    buildEscalationLadder(activeCount);
+    buildEscalationLadder(totalInfractions);
 
+    // Active Ban Live Timer Check
     let currentActiveBan = null;
-    bans.forEach(b => {
+    officialBans.forEach(b => {
         const endMs = parseTimestamp(b.ends_at);
         if (endMs > now) {
             if (!currentActiveBan || endMs > parseTimestamp(currentActiveBan.ends_at)) {
@@ -398,51 +579,167 @@ function renderBansAndPredictor(bans) {
         document.getElementById('active-ban-card').style.display = 'none';
     }
 
-    renderBanHistoryTable(bans);
+    renderBanHistoryTable(officialBans, activeLeaverMatches);
 }
 
-// Render Official Ban History Table Rows
-function renderBanHistoryTable(bans) {
+// Render Ban & Infractions Log Table
+function renderBanHistoryTable(officialBans, activeLeaverMatches) {
     const listContainer = document.getElementById('ban-log-rows');
     const badge = document.getElementById('total-bans-badge');
     listContainer.innerHTML = '';
 
-    badge.innerText = `${bans.length} Total Record${bans.length === 1 ? '' : 's'}`;
+    const combinedList = [];
 
-    if (bans.length === 0) {
-        listContainer.innerHTML = `
-            <tr>
-                <td colspan="4" class="text-center muted">No ban history found for this player. Clean record!</td>
-            </tr>
-        `;
+    // Add official bans
+    officialBans.forEach(b => {
+        combinedList.push({
+            type: 'Official FACEIT Ban',
+            reason: b.reason || b.type || 'Platform Infraction',
+            startMs: parseTimestamp(b.starts_at || b.created_at),
+            endMs: parseTimestamp(b.ends_at),
+            isOfficial: true
+        });
+    });
+
+    // Add detected leaver matches
+    activeLeaverMatches.forEach(m => {
+        combinedList.push({
+            type: 'Detected Match Abandonment',
+            reason: `${m.dnfReason} on ${m.mapName} (${m.score})`,
+            startMs: m.timestamp,
+            endMs: m.timestamp + (30 * 60 * 1000), // estimated cooldown start
+            isOfficial: false
+        });
+    });
+
+    // Sort descending by date
+    combinedList.sort((a, b) => b.startMs - a.startMs);
+
+    badge.innerText = `${combinedList.length} Total Record${combinedList.length === 1 ? '' : 's'}`;
+
+    if (combinedList.length === 0) {
+        listContainer.innerHTML = `<tr><td colspan="4" class="text-center muted">No ban history or detected infractions found. Clean record!</td></tr>`;
         return;
     }
 
     const now = Date.now();
 
-    bans.forEach(b => {
-        const reason = b.reason || b.type || 'Queuing Infraction';
-        const startMs = parseTimestamp(b.starts_at || b.created_at);
-        const endMs = parseTimestamp(b.ends_at);
-
-        const startDateText = startMs ? new Date(startMs).toLocaleString() : 'Unknown';
-        const endDateText = endMs ? new Date(endMs).toLocaleString() : 'Permanent';
+    combinedList.forEach(item => {
+        const startDateText = item.startMs ? new Date(item.startMs).toLocaleString() : 'Unknown';
+        const endDateText = item.endMs ? new Date(item.endMs).toLocaleString() : 'Permanent';
 
         let statusHtml = '';
-        if (endMs && endMs > now) {
+        if (item.isOfficial && item.endMs && item.endMs > now) {
             statusHtml = `<span class="result-badge loss">ACTIVE BAN</span>`;
-        } else {
+        } else if (item.isOfficial) {
             statusHtml = `<span class="badge grey">Expired</span>`;
+        } else {
+            statusHtml = `<span class="status-tag-dnf">Detected Infraction</span>`;
         }
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><strong class="text-red" style="text-transform: capitalize;">${reason}</strong></td>
+            <td><strong class="text-red">${item.reason}</strong> <br><span class="muted text-sm">${item.type}</span></td>
             <td>${startDateText}</td>
             <td>${endDateText}</td>
             <td>${statusHtml}</td>
         `;
         listContainer.appendChild(row);
+    });
+}
+
+// Chart 1: K/D Trend Line Chart (Chart.js)
+function renderKdTrendChart(matches) {
+    const ctx = document.getElementById('chart-kd-trend');
+    if (!ctx) return;
+
+    if (kdChartInstance) kdChartInstance.destroy();
+
+    const chronological = [...matches].reverse();
+    const labels = chronological.map(m => m.date);
+    const dataPoints = chronological.map(m => m.kdRatio);
+
+    kdChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'K/D Ratio',
+                data: dataPoints,
+                borderColor: '#FF5500',
+                backgroundColor: 'rgba(255, 85, 0, 0.15)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.35,
+                pointRadius: 4,
+                pointBackgroundColor: '#FF5500'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#9ca3af' }
+                },
+                y: {
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#9ca3af' },
+                    suggestedMin: 0.5,
+                    suggestedMax: 2.0
+                }
+            }
+        }
+    });
+}
+
+// Chart 2: Map Win Rate Comparison Bar Chart (Chart.js)
+function renderMapWinrateChart(segments) {
+    const ctx = document.getElementById('chart-map-winrate');
+    if (!ctx) return;
+
+    if (mapWinrateChartInstance) mapWinrateChartInstance.destroy();
+
+    const mapSegments = segments.filter(s => s.type === 'Map' || s.mode === '5v5');
+    const labels = mapSegments.map(s => s.label ? s.label.replace('de_', '').toUpperCase() : 'UNKNOWN');
+    const winRates = mapSegments.map(s => parseFloat(s.stats['Win Rate %'] || 0));
+
+    mapWinrateChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Win Rate (%)',
+                data: winRates,
+                backgroundColor: winRates.map(w => w >= 50 ? 'rgba(16, 185, 129, 0.7)' : 'rgba(239, 68, 68, 0.7)'),
+                borderColor: winRates.map(w => w >= 50 ? '#10b981' : '#ef4444'),
+                borderWidth: 1.5,
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#9ca3af' }
+                },
+                y: {
+                    grid: { color: 'rgba(255,255,255,0.05)' },
+                    ticks: { color: '#9ca3af' },
+                    min: 0,
+                    max: 100
+                }
+            }
+        }
     });
 }
 
@@ -526,6 +823,5 @@ function buildEscalationLadder(activeCount) {
 function updateLevelBadge(level) {
     const badge = document.getElementById('level-badge-value');
     badge.innerText = level;
-    badge.className = 'level-badge';
-    badge.classList.add(`lvl-${level}`);
+    badge.className = `level-badge lvl-${level}`;
 }
