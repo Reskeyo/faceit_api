@@ -1,25 +1,14 @@
 // FACEIT Developer API Key configuration placeholder
-// This placeholder will be automatically substituted by GitHub Actions if deploying via GitHub Pages.
-// For local testing, you can replace this string with your actual API key.
+// Dieser Platzhalter wird automatisch von GitHub Actions beim Deployment durch das Secret FACEIT_API_KEY ersetzt.
 const DEFAULT_API_KEY = "__FACEIT_API_KEY__";
 
 // Application State
 let state = {
     config: {
-        nickname: '',
-        manualMode: false
+        nickname: ''
     },
     infractions: [], // Array of { id, type, timestamp }
     activeBan: null, // { expiresAt }
-    manualStats: {
-        level: 3,
-        elo: 1000,
-        streak: 0,
-        matches: 100,
-        winrate: 50,
-        kd: 1.05,
-        avgKd: 1.05
-    },
     activeHistoryTab: 'active' // 'active' or 'expired'
 };
 
@@ -32,14 +21,14 @@ const ROLLING_WINDOW_DAYS = 30;
 const ROLLING_WINDOW_MS = ROLLING_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 const INFRACTION_ESCALATION = [
-    { label: "1st Infraction", durationText: "30 Minutes", durationMs: 30 * 60 * 1000 },
-    { label: "2nd Infraction", durationText: "2 Hours", durationMs: 2 * 60 * 60 * 1000 },
-    { label: "3rd Infraction", durationText: "4 Hours", durationMs: 4 * 60 * 60 * 1000 },
-    { label: "4th Infraction", durationText: "8 Hours", durationMs: 8 * 60 * 60 * 1000 },
-    { label: "5th Infraction", durationText: "12 Hours", durationMs: 12 * 60 * 60 * 1000 },
-    { label: "6th Infraction", durationText: "24 Hours (1 Day)", durationMs: 24 * 60 * 60 * 1000 },
-    { label: "7th Infraction", durationText: "48 Hours (2 Days)", durationMs: 48 * 60 * 60 * 1000 },
-    { label: "8+ Infractions", durationText: "1 Week (7 Days)", durationMs: 7 * 24 * 60 * 60 * 1000 }
+    { label: "1. Strafe", durationText: "30 Minuten", durationMs: 30 * 60 * 1000 },
+    { label: "2. Strafe", durationText: "2 Stunden", durationMs: 2 * 60 * 60 * 1000 },
+    { label: "3. Strafe", durationText: "4 Stunden", durationMs: 4 * 60 * 60 * 1000 },
+    { label: "4. Strafe", durationText: "8 Stunden", durationMs: 8 * 60 * 60 * 1000 },
+    { label: "5. Strafe", durationText: "12 Stunden", durationMs: 12 * 60 * 60 * 1000 },
+    { label: "6. Strafe", durationText: "24 Stunden (1 Tag)", durationMs: 24 * 60 * 60 * 1000 },
+    { label: "7. Strafe", durationText: "48 Stunden (2 Tage)", durationMs: 48 * 60 * 60 * 1000 },
+    { label: "8+ Strafen", durationText: "1 Woche (7 Tage)", durationMs: 7 * 24 * 60 * 60 * 1000 }
 ];
 
 // Initialize Application
@@ -55,9 +44,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // Auto-fetch if nickname exists and API key is set
     if (state.config.nickname) {
         document.getElementById('nickname-search').value = state.config.nickname;
-        if (state.config.manualMode) {
-            updateUI();
-        } else if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__") {
+        if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__") {
             fetchStats();
         }
     }
@@ -68,12 +55,6 @@ function checkApiKeySetup() {
     const warningCard = document.getElementById('dev-warning-card');
     const isConfigured = DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__";
     
-    // If manual mode is enabled, we bypass the API key alert
-    if (state.config.manualMode) {
-        warningCard.style.display = 'none';
-        return true;
-    }
-
     if (!isConfigured) {
         warningCard.style.display = 'block';
         document.getElementById('stats-dashboard').style.display = 'none';
@@ -95,23 +76,8 @@ function loadFromLocalStorage() {
     const savedActiveBan = localStorage.getItem('faceit_active_ban');
     if (savedActiveBan) state.activeBan = JSON.parse(savedActiveBan);
 
-    const savedManualStats = localStorage.getItem('faceit_manual_stats');
-    if (savedManualStats) state.manualStats = JSON.parse(savedManualStats);
-
     // Sync HTML Form elements
     document.getElementById('nickname-search').value = state.config.nickname || '';
-    document.getElementById('manual-mode-toggle').checked = state.config.manualMode || false;
-
-    // Populate manual inputs
-    document.getElementById('m-level').value = state.manualStats.level;
-    document.getElementById('m-elo').value = state.manualStats.elo;
-    document.getElementById('m-streak').value = state.manualStats.streak;
-    document.getElementById('m-matches').value = state.manualStats.matches;
-    document.getElementById('m-winrate').value = state.manualStats.winrate;
-    document.getElementById('m-kd').value = state.manualStats.kd;
-    document.getElementById('m-avg-kd').value = state.manualStats.avgKd;
-
-    toggleManualModeUI(state.config.manualMode);
 }
 
 // Save state to localStorage
@@ -124,51 +90,6 @@ function setupEventListeners() {
     // Search form submissions
 }
 
-// Toggle manual mode and show/hide manual controls
-function toggleManualMode(enabled) {
-    state.config.manualMode = enabled;
-    saveState('faceit_config_v2', state.config);
-    toggleManualModeUI(enabled);
-    updateUI();
-}
-
-function toggleManualModeUI(enabled) {
-    const manualStatsInputs = document.getElementById('manual-stats-inputs');
-    const manualStatsDetails = document.getElementById('manual-stats-details');
-    const matchesSection = document.getElementById('matches-section');
-
-    if (enabled) {
-        manualStatsInputs.style.display = 'block';
-        manualStatsDetails.style.display = 'block';
-        matchesSection.style.display = 'none'; // Hide matches in manual mode
-        document.getElementById('stats-dashboard').style.display = 'grid';
-    } else {
-        manualStatsInputs.style.display = 'none';
-        manualStatsDetails.style.display = 'none';
-        matchesSection.style.display = 'block';
-        // Hide dashboard on API mode if search nickname is empty
-        if (!state.config.nickname) {
-            document.getElementById('stats-dashboard').style.display = 'none';
-            document.getElementById('matches-section').style.display = 'none';
-        }
-    }
-    checkApiKeySetup();
-}
-
-// Update manual statistics input
-function updateManualStat(statName, value) {
-    let parsedValue = parseFloat(value);
-    if (statName === 'level' || statName === 'elo' || statName === 'streak' || statName === 'matches' || statName === 'winrate') {
-        parsedValue = parseInt(value) || 0;
-    } else {
-        parsedValue = parseFloat(value) || 0;
-    }
-    
-    state.manualStats[statName] = parsedValue;
-    saveState('faceit_manual_stats', state.manualStats);
-    updateUI();
-}
-
 // Handle nickname search submit
 function handleSearchSubmit(event) {
     event.preventDefault();
@@ -178,9 +99,7 @@ function handleSearchSubmit(event) {
     state.config.nickname = query;
     saveState('faceit_config_v2', state.config);
     
-    if (state.config.manualMode) {
-        updateUI();
-    } else if (checkApiKeySetup()) {
+    if (checkApiKeySetup()) {
         fetchStats();
     }
 }
@@ -197,7 +116,7 @@ function setCurrentTime() {
 // Core Fetching Mechanism (API calls bypass CORS using corsproxy.io)
 async function faceitFetch(endpoint) {
     if (!DEFAULT_API_KEY || DEFAULT_API_KEY === "__FACEIT_API_KEY__") {
-        throw new Error('API key is not configured inside app.js.');
+        throw new Error('API Key ist nicht konfiguriert.');
     }
 
     const targetUrl = `https://open.faceit.com/data/v4/${endpoint}`;
@@ -214,11 +133,11 @@ async function faceitFetch(endpoint) {
 
     if (!response.ok) {
         if (response.status === 401) {
-            throw new Error('Unauthorized: The configured FACEIT API Key is invalid.');
+            throw new Error('Unauthorized: Der FACEIT API Key ist ungültig.');
         } else if (response.status === 404) {
-            throw new Error('Not Found: The requested nickname or resource could not be found.');
+            throw new Error('Nicht gefunden: Der Nickname existiert nicht.');
         } else {
-            throw new Error(`FACEIT API Error (HTTP Status ${response.status})`);
+            throw new Error(`FACEIT API Fehler (Status ${response.status})`);
         }
     }
 
@@ -266,7 +185,7 @@ async function fetchStats() {
         try {
             cs2Stats = await faceitFetch(`players/${player_id}/stats/cs2`);
         } catch (err) {
-            console.warn('Could not load specific CS2 statistics. Player might not have played any CS2 matches yet.', err);
+            console.warn('Keine spezifischen CS2-Statistiken gefunden.', err);
         }
 
         if (cs2Stats && cs2Stats.lifetime) {
@@ -293,7 +212,6 @@ async function fetchStats() {
                 streakEl.innerText = '0';
             }
         } else {
-            // Reset fields
             document.getElementById('stat-matches').innerText = '-';
             document.getElementById('stat-winrate').innerText = '-';
             document.getElementById('stat-kd').innerText = '-';
@@ -309,9 +227,8 @@ async function fetchStats() {
 
     } catch (error) {
         console.error(error);
-        alert(`Failed to load data: ${error.message}`);
+        alert(`Fehler beim Laden: ${error.message}`);
         
-        // Hide details and reset loading animations
         document.getElementById('profile-loading').style.display = 'none';
         document.getElementById('profile-display').style.display = 'block';
         document.getElementById('matches-loading').style.display = 'none';
@@ -329,7 +246,7 @@ async function fetchMatchHistory(player_id) {
         listContainer.innerHTML = '';
 
         if (matches.length === 0) {
-            listContainer.innerHTML = `<tr><td colspan="6" class="text-center muted">No matches recorded in history.</td></tr>`;
+            listContainer.innerHTML = `<tr><td colspan="6" class="text-center muted">Keine Matches in der Historie.</td></tr>`;
             document.getElementById('matches-loading').style.display = 'none';
             document.getElementById('matches-table-container').style.display = 'block';
             return;
@@ -394,7 +311,7 @@ async function fetchMatchHistory(player_id) {
                 <td>${date}</td>
                 <td><span class="map-badge">${mapName}</span></td>
                 <td>${score}</td>
-                <td><span class="result-badge ${result === 'W' ? 'win' : 'loss'}">${result === 'W' ? 'WIN' : 'LOSE'}</span></td>
+                <td><span class="result-badge ${result === 'W' ? 'win' : 'loss'}">${result === 'W' ? 'SIEG' : 'NIEDERLAGE'}</span></td>
                 <td>${kills} <span class="muted">/</span> ${deaths}</td>
                 <td class="font-mono ${parseFloat(kdRatio) >= 1.0 ? 'text-green' : 'text-red'}">${kdRatio}</td>
             `;
@@ -414,7 +331,7 @@ async function fetchMatchHistory(player_id) {
 
     } catch (err) {
         console.error('Error fetching match history details:', err);
-        document.getElementById('matches-list').innerHTML = `<tr><td colspan="6" class="text-center text-red">Failed to load recent match details.</td></tr>`;
+        document.getElementById('matches-list').innerHTML = `<tr><td colspan="6" class="text-center text-red">Fehler beim Laden der Match-Historie.</td></tr>`;
         document.getElementById('matches-loading').style.display = 'none';
         document.getElementById('matches-table-container').style.display = 'block';
     }
@@ -436,13 +353,13 @@ function logInfraction(event) {
     const timeVal = document.getElementById('infraction-time').value;
 
     if (!timeVal) {
-        alert('Please specify a valid Date & Time.');
+        alert('Bitte wähle ein gültiges Datum & Uhrzeit.');
         return;
     }
 
     const timestamp = new Date(timeVal).getTime();
     if (isNaN(timestamp)) {
-        alert('Invalid Date & Time value.');
+        alert('Ungültiges Datum.');
         return;
     }
 
@@ -500,34 +417,6 @@ function getExpiredInfractions() {
 function updateUI() {
     const active = getActiveInfractions();
 
-    // Renders Stats Profile (If Manual Mode is active)
-    if (state.config.manualMode) {
-        document.getElementById('user-name').innerText = state.config.nickname || 'Guest Player';
-        document.getElementById('user-country').innerText = 'Manual';
-        document.getElementById('user-avatar').src = 'https://images.faceit.com/images/avatars/default_avatar.png';
-        
-        document.getElementById('elo-value').innerText = state.manualStats.elo;
-        updateLevelBadge(state.manualStats.level);
-
-        const streakVal = state.manualStats.streak;
-        const streakEl = document.getElementById('streak-value');
-        if (streakVal > 0) {
-            streakEl.className = 'value text-green bold';
-            streakEl.innerText = `+${streakVal}`;
-        } else if (streakVal < 0) {
-            streakEl.className = 'value text-red bold';
-            streakEl.innerText = `${streakVal}`;
-        } else {
-            streakEl.className = 'value muted';
-            streakEl.innerText = '0';
-        }
-
-        document.getElementById('stat-matches').innerText = state.manualStats.matches;
-        document.getElementById('stat-winrate').innerText = `${state.manualStats.winrate}%`;
-        document.getElementById('stat-kd').innerText = state.manualStats.kd.toFixed(2);
-        document.getElementById('stat-avg-kd').innerText = state.manualStats.avgKd.toFixed(2);
-    }
-
     // Update Predictor values
     const activeCount = active.length;
     document.getElementById('active-infractions-count').innerText = activeCount;
@@ -564,9 +453,9 @@ function buildEscalationLadder(activeCount) {
             statusText = '✔️';
         } else if (idx === activeCount) {
             stepEl.classList.add('next-up');
-            statusText = '<span class="badge next-up-badge">NEXT</span>';
+            statusText = '<span class="badge next-up-badge">NÄCHSTE</span>';
         } else {
-            statusText = `<span class="badge muted">Tier ${idx+1}</span>`;
+            statusText = `<span class="badge muted">Stufe ${idx+1}</span>`;
         }
 
         stepEl.innerHTML = `
@@ -602,7 +491,7 @@ function renderHistoryTable() {
     if (list.length === 0) {
         listContainer.innerHTML = `
             <tr>
-                <td colspan="5" class="text-center muted">No infractions logged under this category.</td>
+                <td colspan="5" class="text-center muted">Keine Strafen in dieser Kategorie verzeichnet.</td>
             </tr>
         `;
         return;
@@ -614,7 +503,7 @@ function renderHistoryTable() {
         const cleanDateText = new Date(expirationTime).toLocaleString();
         
         // Time remaining formatting
-        let timeRemainingText = 'Expired';
+        let timeRemainingText = 'Abgelaufen';
         if (state.activeHistoryTab === 'active') {
             timeRemainingText = formatTimeRemaining(expirationTime - Date.now());
         }
@@ -626,7 +515,7 @@ function renderHistoryTable() {
             <td>${cleanDateText}</td>
             <td class="font-mono text-green">${timeRemainingText}</td>
             <td>
-                <button class="action-icon-btn" onclick="deleteInfraction('${inf.id}')" title="Delete infraction record">
+                <button class="action-icon-btn" onclick="deleteInfraction('${inf.id}')" title="Eintrag löschen">
                     <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>
                     </svg>
@@ -639,7 +528,7 @@ function renderHistoryTable() {
 
 // Format duration in milliseconds to clean format
 function formatTimeRemaining(durationMs) {
-    if (durationMs <= 0) return 'Expiring...';
+    if (durationMs <= 0) return 'Verfällt...';
 
     const seconds = Math.floor((durationMs / 1000) % 60);
     const minutes = Math.floor((durationMs / (1000 * 60)) % 60);
@@ -669,7 +558,7 @@ function startCustomBan() {
     const unit = document.getElementById('ban-set-unit').value;
 
     if (value <= 0) {
-        alert('Please enter a valid cooldown duration.');
+        alert('Bitte wähle eine gültige Dauer.');
         return;
     }
 
@@ -710,12 +599,12 @@ function handleBanTimer() {
             document.getElementById('active-ban-card').style.display = 'none';
             state.activeBan = null;
             saveState('faceit_active_ban', null);
-            alert('Your FACEIT queue restriction has expired! You are clean to play.');
+            alert('Deine FACEIT Queue-Sperre ist abgelaufen! Du kannst wieder spielen.');
             return;
         }
 
         document.getElementById('active-ban-card').style.display = 'block';
-        document.getElementById('ban-timer-meta').innerText = `Banned until: ${new Date(expiresAt).toLocaleTimeString()}`;
+        document.getElementById('ban-timer-meta').innerText = `Gesperrt bis: ${new Date(expiresAt).toLocaleTimeString()}`;
 
         // Format countdown string
         const secs = Math.floor((diff / 1000) % 60);
@@ -771,23 +660,20 @@ function importData(event) {
                 saveState('faceit_config_v2', state.config);
                 saveState('faceit_infractions', state.infractions);
                 saveState('faceit_active_ban', state.activeBan);
-                saveState('faceit_manual_stats', state.manualStats);
                 
                 // Refresh inputs in HTML Form
                 document.getElementById('nickname-search').value = state.config.nickname || '';
-                document.getElementById('manual-mode-toggle').checked = state.config.manualMode || false;
-                toggleManualModeUI(state.config.manualMode);
 
                 updateUI();
-                if (!state.config.manualMode && checkApiKeySetup() && state.config.nickname) {
+                if (checkApiKeySetup() && state.config.nickname) {
                     fetchStats();
                 }
-                alert('Backup data successfully imported!');
+                alert('Sicherungsdaten erfolgreich importiert!');
             } else {
-                alert('Invalid backup file structure.');
+                alert('Ungültige Backup-Datei.');
             }
         } catch (err) {
-            alert('Failed to parse file. Make sure it is a valid backup JSON file.');
+            alert('Fehler beim Lesen der Datei.');
             console.error(err);
         }
     };
@@ -796,29 +682,26 @@ function importData(event) {
 
 // Reset localStorage data
 function clearAllData() {
-    if (confirm('Are you sure you want to reset all data? This will clear your query settings and your entire logged infraction history.')) {
+    if (confirm('Bist du sicher, dass du alle Daten zurücksetzen möchtest? Dies löscht deine Suchhistorie und alle eingetragenen Strafen.')) {
         localStorage.clear();
         state = {
-            config: { nickname: '', manualMode: false },
+            config: { nickname: '' },
             infractions: [],
             activeBan: null,
-            manualStats: { level: 3, elo: 1000, streak: 0, matches: 100, winrate: 50, kd: 1.05, avgKd: 1.05 },
             activeHistoryTab: 'active'
         };
         
         document.getElementById('nickname-search').value = '';
-        document.getElementById('manual-mode-toggle').checked = false;
         
         // Hide dashboard
         document.getElementById('stats-dashboard').style.display = 'none';
         document.getElementById('matches-section').style.display = 'none';
 
-        toggleManualModeUI(false);
         updateUI();
         
         if (banCountdownInterval) clearInterval(banCountdownInterval);
         if (infractionCountdownInterval) clearInterval(infractionCountdownInterval);
         
-        alert('All local data has been successfully cleared.');
+        alert('Alle Daten wurden zurückgesetzt.');
     }
 }
