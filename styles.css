@@ -1110,3 +1110,18 @@ input:focus, select:focus {
     color: var(--accent-orange);
 }
 
+.ban-reason-tag {
+    font-size: 0.75rem;
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-red);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+.badge.grey {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+}
+

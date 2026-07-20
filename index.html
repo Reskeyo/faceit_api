@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -33,13 +33,13 @@
                 <div class="card-body">
                     <form id="search-form" onsubmit="handleSearchSubmit(event)">
                         <div class="search-bar-row">
-                            <input type="text" id="nickname-search" placeholder="FACEIT Nickname eingeben (z.B. s1mple)" required>
+                            <input type="text" id="nickname-search" placeholder="Enter FACEIT Nickname (e.g. s1mple)" required>
                             <button type="submit" class="btn btn-primary search-btn" id="search-submit-btn">
                                 <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="11" cy="11" r="8"/>
                                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                                 </svg>
-                                Stats Suchen
+                                Search Player
                             </button>
                         </div>
                     </form>
@@ -47,28 +47,28 @@
             </div>
         </section>
 
-        <!-- Developer API Key Warning Alert (Shown if key is not configured) -->
+        <!-- Developer API Key Warning Alert (Shown if key is not injected) -->
         <div class="card warning-card spacer-y-md" id="dev-warning-card" style="display: none;">
             <div class="card-body text-center">
                 <div class="warning-large-icon">⚠️</div>
-                <h3>FACEIT API Key erforderlich</h3>
+                <h3>FACEIT API Key Required</h3>
                 <p class="description-text">
-                    Um automatische CS2-Statistiken abzufragen, muss der API Key in den GitHub Repository Secrets hinterlegt werden.
+                    To automatically fetch CS2 statistics and ban history, your API Key must be injected by GitHub.
                 </p>
                 <p class="text-sm muted">
-                    Füge deinen Key in GitHub unter <strong>Settings &gt; Secrets and variables &gt; Actions</strong> als <code class="code-highlight">FACEIT_API_KEY</code> hinzu.
-                    Beim nächsten Deployment schaltet GitHub Pages die automatische Suche frei.
+                    You have already added <code class="code-highlight">FACEIT_API_KEY</code> to your repository secrets.
+                    Once GitHub Actions finishes building the site, this notice will disappear automatically!
                 </p>
             </div>
         </div>
 
-        <!-- Stats Section (Grid) -->
+        <!-- Dashboard Section (Grid) -->
         <div class="dashboard-grid spacer-y-md" id="stats-dashboard" style="display: none;">
             <!-- Player Info Profile Card -->
             <section class="card profile-card" id="profile-container">
                 <div class="card-body center-flex text-center loading-container" id="profile-loading" style="display: none;">
                     <div class="spinner"></div>
-                    <p>Spielerprofil wird geladen...</p>
+                    <p>Fetching player profile...</p>
                 </div>
                 <div class="card-body" id="profile-display">
                     <div class="profile-header">
@@ -76,7 +76,7 @@
                             <img src="https://images.faceit.com/images/avatars/default_avatar.png" alt="Avatar" id="user-avatar" class="avatar-img">
                         </div>
                         <div class="profile-details">
-                            <h3 id="user-name">Guest Player</h3>
+                            <h3 id="user-name">Player</h3>
                             <div class="profile-sub">
                                 <span class="country-badge" id="user-country">EU</span>
                                 <span class="region-text">CS2 Matchmaking</span>
@@ -86,7 +86,7 @@
                     <div class="level-showcase">
                         <div class="level-badge" id="level-badge-value">1</div>
                         <div class="level-meta">
-                            <span class="label">Aktuelle Elo</span>
+                            <span class="label">Current Elo</span>
                             <span class="value" id="elo-value">1000</span>
                         </div>
                         <div class="level-meta">
@@ -100,7 +100,7 @@
             <!-- CS2 Stats Details Card -->
             <section class="card stats-card" id="stats-container">
                 <div class="card-header">
-                    <h2>CS2 Statistiken</h2>
+                    <h2>CS2 Statistics</h2>
                 </div>
                 <div class="card-body">
                     <div class="stats-grid">
@@ -117,7 +117,7 @@
                             <span class="stat-val" id="stat-kd">-</span>
                         </div>
                         <div class="stat-box">
-                            <span class="stat-label">Durchschnitt K/D</span>
+                            <span class="stat-label">Average K/D</span>
                             <span class="stat-val" id="stat-avg-kd">-</span>
                         </div>
                     </div>
@@ -128,28 +128,28 @@
         <!-- Recent Match History Card -->
         <section class="card matches-card spacer-y-md" id="matches-section" style="display: none;">
             <div class="card-header">
-                <h2>Letzte Matches (CS2)</h2>
+                <h2>Recent Matches (CS2)</h2>
             </div>
             <div class="card-body">
                 <div class="loading-container text-center" id="matches-loading" style="display: none;">
                     <div class="spinner"></div>
-                    <p>Matches werden geladen...</p>
+                    <p>Loading recent match history...</p>
                 </div>
                 <div class="table-responsive" id="matches-table-container">
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th>Datum</th>
+                                <th>Date</th>
                                 <th>Map</th>
-                                <th>Ergebnis</th>
-                                <th>Status</th>
-                                <th>Kills (Deaths)</th>
+                                <th>Score</th>
+                                <th>Result</th>
+                                <th>Kills / Deaths</th>
                                 <th>K/D Ratio</th>
                             </tr>
                         </thead>
                         <tbody id="matches-list">
                             <tr>
-                                <td colspan="6" class="text-center muted">Noch keine Matches geladen.</td>
+                                <td colspan="6" class="text-center muted">No matches loaded yet.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -157,101 +157,53 @@
             </div>
         </section>
 
-        <!-- Penalty Dashboard Section (Grid layout for actions & predictor) -->
-        <div class="dashboard-grid spacer-y-lg">
-            <!-- Left panel: Penalty predictor and current active ban -->
+        <!-- Penalty & Cooldown Predictor Section -->
+        <div class="dashboard-grid spacer-y-lg" id="penalty-section" style="display: none;">
+            <!-- Left Column: Cooldown Predictor & Active Ban Countdown -->
             <div class="predictor-column">
-                <!-- Cooldown Predictor Card -->
                 <section class="card predictor-card glow-border">
                     <div class="card-header">
-                        <h2>Strafe Predictor</h2>
+                        <h2>Penalty & Ban Predictor</h2>
                     </div>
                     <div class="card-body">
                         <div class="prediction-alert highlight">
-                            <span class="prediction-label">Nächste Ban-Dauer</span>
-                            <span class="prediction-time" id="next-cooldown-time">30 Minuten</span>
-                            <p class="prediction-desc">Basierend auf <strong id="active-infractions-count">0</strong> Strafen in den letzten 30 Tagen.</p>
+                            <span class="prediction-label">Next Infraction Ban Duration</span>
+                            <span class="prediction-time" id="next-cooldown-time">30 Minutes</span>
+                            <p class="prediction-desc">Based on <strong id="active-infractions-count">0</strong> infractions in your rolling 30-day window.</p>
                         </div>
                         
-                        <!-- Elo Warning Alert -->
+                        <!-- Severe Elo Penalty Warning Alert -->
                         <div class="warning-alert spacer-y-sm">
                             <div class="warning-icon">⚠️</div>
                             <div class="warning-content">
-                                <strong>Strikte Elo-Strafe aktiv!</strong>
-                                <p>Wenn du als "Leaver" markiert wirst: Verlierst du bei Niederlage <strong>doppelt Elo</strong> und erhältst bei Sieg nur <strong>50% Elo</strong>.</p>
+                                <strong>Severe Elo Penalty Active!</strong>
+                                <p>If flagged as a "Leaver" in a match: You lose <strong>double Elo</strong> on a defeat (~50 Elo loss), and gain only <strong>50% Elo</strong> on a victory (~12 Elo gain).</p>
                             </div>
                         </div>
 
-                        <!-- Active Ban Countdown Timer (If banned right now) -->
+                        <!-- Active Ban Live Countdown (Automatically displayed if player is currently banned) -->
                         <div class="active-ban-card spacer-y-md" id="active-ban-card" style="display: none;">
                             <div class="active-ban-header">
-                                <span class="ban-badge">AKTIVER QUEUE BAN</span>
-                                <button class="btn-text" onclick="clearActiveBan()">Ausblenden</button>
+                                <span class="ban-badge">ACTIVE QUEUE BAN</span>
+                                <span class="ban-reason-tag" id="ban-reason-text">Leaver / noShow</span>
                             </div>
                             <div class="ban-timer" id="ban-timer-countdown">00:00:00</div>
-                            <p class="muted text-center text-sm" id="ban-timer-meta">Banned bis: --:--</p>
+                            <p class="muted text-center text-sm" id="ban-timer-meta">Banned until: --:--</p>
                         </div>
-
-                        <!-- Button to manually flag a current active ban -->
-                        <div class="spacer-y-md" id="set-ban-container">
-                            <button class="btn btn-danger btn-full" onclick="showBanSetter()">Ich habe aktuell einen aktiven Ban</button>
-                            
-                            <!-- Custom ban duration selector modal/dropdown (Inline) -->
-                            <div id="ban-setter-form" class="ban-setter-box" style="display: none;">
-                                <h4>Ban-Timer starten</h4>
-                                <div class="form-row gap-xs">
-                                    <input type="number" id="ban-set-value" min="1" value="30" style="width: 70px;">
-                                    <select id="ban-set-unit">
-                                        <option value="minutes">Minuten</option>
-                                        <option value="hours">Stunden</option>
-                                        <option value="days">Tage</option>
-                                    </select>
-                                    <button class="btn btn-primary btn-sm" onclick="startCustomBan()">Starten</button>
-                                </div>
-                                <button class="btn-text spacer-y-xs" onclick="hideBanSetter()">Abbrechen</button>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-
-                <!-- Logger Form Card -->
-                <section class="card logger-card spacer-y-md">
-                    <div class="card-header">
-                        <h2>Match-Strafe eintragen</h2>
-                    </div>
-                    <div class="card-body">
-                        <form id="infraction-form" onsubmit="logInfraction(event)">
-                            <div class="form-group">
-                                <label for="infraction-type">Grund der Strafe</label>
-                                <select id="infraction-type" required>
-                                    <option value="leaver">Leaver (Spiel verlassen / >5 Min dc)</option>
-                                    <option value="noshow">noShow (Warmup verpasst)</option>
-                                    <option value="afk">AFK / Queue abgelehnt</option>
-                                </select>
-                            </div>
-                            <div class="form-group spacer-y-sm">
-                                <label for="infraction-time">Datum & Uhrzeit</label>
-                                <input type="datetime-local" id="infraction-time" required>
-                            </div>
-                            <div class="form-row spacer-y-md">
-                                <button type="button" class="btn btn-secondary" onclick="setCurrentTime()">Jetzt</button>
-                                <button type="submit" class="btn btn-accent">Strafe eintragen</button>
-                            </div>
-                        </form>
                     </div>
                 </section>
             </div>
 
-            <!-- Right panel: Ban ladder visualization -->
+            <!-- Right Column: Ban Escalation Ladder -->
             <div class="ladder-column">
                 <section class="card ladder-card h-full">
                     <div class="card-header">
-                        <h2>Ban-Eskalationsleiter</h2>
-                        <span class="badge">30-Tage Fenster</span>
+                        <h2>Ban Escalation Ladder</h2>
+                        <span class="badge">30-day window</span>
                     </div>
                     <div class="card-body">
                         <p class="description-text text-sm spacer-y-xs">
-                            Sperren eskalieren basierend auf deinen aktiven Strafen der letzten 30 Tage.
+                            FACEIT bans escalate based on your active infraction count within the last 30 days.
                         </p>
                         <div class="ban-ladder" id="escalation-ladder">
                             <!-- Populated dynamically via JS -->
@@ -261,75 +213,64 @@
             </div>
         </div>
 
-        <!-- Infraction History Log -->
-        <section class="card history-card spacer-y-lg">
+        <!-- Official Player Ban History (Fetched from FACEIT API) -->
+        <section class="card history-card spacer-y-lg" id="ban-history-section" style="display: none;">
             <div class="card-header space-between">
-                <h2>Strafen-Historie & Verfall</h2>
-                <div class="history-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="exportData()">Export JSON</button>
-                    <button class="btn btn-secondary btn-sm" onclick="triggerImport()">Import JSON</button>
-                    <input type="file" id="import-file" style="display: none;" onchange="importData(event)">
-                    <button class="btn btn-danger btn-sm" onclick="clearAllData()">Zurücksetzen</button>
-                </div>
+                <h2>Official FACEIT Ban History</h2>
+                <span class="badge grey" id="total-bans-badge">0 Total Records</span>
             </div>
             <div class="card-body">
-                <div class="tabs">
-                    <button class="tab-btn active" id="tab-active" onclick="switchHistoryTab('active')">Aktive Strafen (30 Tage)</button>
-                    <button class="tab-btn" id="tab-expired" onclick="switchHistoryTab('expired')">Abgelaufene Historie</button>
-                </div>
-
-                <div class="tab-content">
-                    <div class="table-responsive">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Typ</th>
-                                    <th>Zeitpunkt der Strafe</th>
-                                    <th>Verfallsdatum (Clean Date)</th>
-                                    <th>Restzeit</th>
-                                    <th>Aktionen</th>
-                                </tr>
-                            </thead>
-                            <tbody id="infraction-log-rows">
-                                <!-- Populated dynamically -->
-                            </tbody>
-                        </table>
-                    </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Reason</th>
+                                <th>Ban Date</th>
+                                <th>Expiration Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ban-log-rows">
+                            <tr>
+                                <td colspan="4" class="text-center muted">No ban history found for this player.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </section>
 
-        <!-- FAQ Guide Section -->
+        <!-- Official Rules & FAQ Section (English) -->
         <section class="card faq-card spacer-y-lg" id="faq-section">
             <div class="card-header">
-                <h2>FACEIT Reglement & FAQ Guide</h2>
+                <h2>FACEIT Penalty Rules & FAQ Guide</h2>
             </div>
             <div class="card-body faq-body">
                 <div class="faq-item">
-                    <h3>Wie funktioniert das Eskalationssystem?</h3>
+                    <h3>How does the ban escalation system work?</h3>
                     <p>
-                        FACEIT führt "Leaver", "noShow" und "AFK/Abgelehnt" in einem gemeinsamen Index. Jede Strafe bleibt exakt <strong>30 Tage</strong> in deinem Verlauf. Mehrere Strafen innerhalb dieser 30 Tage erhöhen die Dauer des nächsten Bans drastisch (bis zu 7 Tage).
+                        FACEIT tracks "Leaver", "noShow", and "AFK/Declined" infractions under a single, unified account index. Cooldowns are automated and stack. Every infraction remains in your ban history for a rolling <strong>30-day period</strong>. Multiple infractions within 30 days escalate your ban length significantly (up to 7 days).
                     </p>
                 </div>
 
                 <div class="faq-item">
-                    <h3>Was unterscheidet Leaver, noShow und AFK?</h3>
+                    <h3>What is the difference between Leaver, noShow, and AFK?</h3>
                     <p>
                         <ul>
-                            <li><strong>Leaver:</strong> Tritt ein, wenn du kumuliert länger als 5 Minuten nicht auf dem Server warst. Auch wenn du wieder beitrittst und zu Ende spielst, wird die Sperre verhängt.</li>
-                            <li><strong>noShow:</strong> Tritt ein, wenn du in der Warmup-Phase (3 Minuten bei Matchmaking, 10 Minuten bei Turnieren) nicht auf den Server verbindest.</li>
-                            <li><strong>AFK / Abgelehnt:</strong> Tritt ein, wenn du in der Warteschlange nicht rechtzeitig auf "Annehmen" klickst.</li>
+                            <li><strong>Leaver:</strong> Triggered if you are disconnected from a live server for a cumulative total of more than 5 minutes. Even if you reconnect and finish the match, the queue ban is applied at the end.</li>
+                            <li><strong>noShow:</strong> Triggered if you fail to connect to your assigned match server during the designated warmup window (3 minutes for standard matchmaking, 10 minutes for structured tournaments).</li>
+                            <li><strong>AFK / Declined:</strong> Triggered if you fail to click the "Accept" button when a match queue pops.</li>
                         </ul>
                     </p>
                 </div>
 
                 <div class="faq-item">
-                    <h3>Wie funktioniert die Elo-Strafe für Leaver?</h3>
+                    <h3>What is the Elo penalty for a Leaver?</h3>
                     <p>
-                        Wenn du in einem Match als "Leaver" markiert wirst:
+                        When flagged as a "Leaver" during a match, your Elo calculations are heavily penalized:
                         <ul>
-                            <li>Bei **Niederlage**: Du verlierst **doppelt Elo** (ca. -50 statt -25 Elo).</li>
-                            <li>Bei **Sieg**: Du bekommst nur **50% Elo** gutgeschrieben (ca. +12 statt +25 Elo).</li>
+                            <li><strong>If your team loses:</strong> You receive **double the standard Elo deduction** (~50 Elo loss).</li>
+                            <li><strong>If your team wins:</strong> You receive only **50% of the calculated Elo gain** (~12 Elo gain).</li>
                         </ul>
                     </p>
                 </div>
@@ -339,8 +280,8 @@
 
     <footer class="app-footer">
         <div class="container footer-container">
-            <p>Entwickelt für CS2 Spieler. Nicht verbunden mit FACEIT.</p>
-            <p>Gehostet auf GitHub Pages via Actions Workflow.</p>
+            <p>Built for CS2 players. Not affiliated with FACEIT.</p>
+            <p>Hosted on GitHub Pages via GitHub Actions.</p>
         </div>
     </footer>
 
