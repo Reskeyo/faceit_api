@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="styles.css?v=3.4.0">
+    <link rel="stylesheet" href="styles.css?v=3.5.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
 </head>
 <body>
@@ -35,7 +35,7 @@
                     CS2 <span class="hero-highlight">FACEIT STATS</span> & BAN PREDICTOR
                 </h1>
                 <p class="hero-subtitle">
-                    Instant Matchmaking Analytics, 30-Day Infraction Calculator & Level Tracker
+                    Instant Matchmaking Analytics, Rolling Ban Escalation Predictor & Skill Level Tracker
                 </p>
 
                 <!-- Centered Search Card -->
@@ -62,11 +62,11 @@
                     </div>
                     <div class="hero-feature-pill">
                         <span class="hero-pill-icon">🛡️</span>
-                        <span>Complete 30-Day Ban Predictor Scan</span>
+                        <span>Rolling Ban Escalation Predictor</span>
                     </div>
                     <div class="hero-feature-pill">
                         <span class="hero-pill-icon">📜</span>
-                        <span>Full Match History & Filters</span>
+                        <span>Full Match History & Map Banners</span>
                     </div>
                 </div>
             </div>
@@ -113,10 +113,10 @@
             </button>
         </nav>
 
-        <!-- Loading Indicator -->
-        <div class="card card-body text-center loading-container spacer-y-md" id="global-loading" style="display: none;">
-            <div class="spinner"></div>
-            <p id="loading-text">Fetching FACEIT data...</p>
+        <!-- Premium Loading Indicator -->
+        <div class="card card-body text-center loading-container-premium spacer-y-md" id="global-loading" style="display: none;">
+            <div class="faceit-spinner"></div>
+            <p id="loading-text" class="loading-text-glow">Fetching FACEIT data...</p>
         </div>
 
         <!-- TAB 1: OVERVIEW / DASHBOARD -->
@@ -176,7 +176,7 @@
                                 <span class="stat-val" id="stat-kd">-</span>
                             </div>
                             <div class="stat-box">
-                                <span class="stat-label">Headshot %</span>
+                                <span class="stat-label">HS %</span>
                                 <span class="stat-val text-orange" id="stat-hs-pct">-</span>
                             </div>
                         </div>
@@ -215,13 +215,13 @@
                 <section class="card warning-border">
                     <div class="card-header space-between">
                         <h2>Ban & Cooldown Status</h2>
-                        <span class="badge" id="overview-infraction-badge">0 Infractions</span>
+                        <span class="badge" id="overview-infraction-badge">0 Active Infractions</span>
                     </div>
                     <div class="card-body">
                         <div class="prediction-alert highlight">
                             <span class="prediction-label">Next Infraction Ban Duration</span>
                             <span class="prediction-time" id="overview-next-cooldown">30 Minutes</span>
-                            <p class="prediction-desc">Based on 100% complete match scanning in your rolling 30-day window.</p>
+                            <p class="prediction-desc">Calculated based on FACEIT's 30-day consecutive reset rule.</p>
                         </div>
                         <div class="spacer-y-sm">
                             <button class="btn btn-primary w-full" onclick="switchTab('tab-penalties')">Open Ban Predictor & Escalation Ladder</button>
@@ -250,7 +250,7 @@
                                 <span class="stat-val text-green" id="stat-kr">-</span>
                             </div>
                             <div class="stat-box">
-                                <span class="stat-label">Headshots %</span>
+                                <span class="stat-label">HS %</span>
                                 <span class="stat-val text-orange" id="stat-headshots-pct-deep">-</span>
                             </div>
                             <div class="stat-box">
@@ -324,7 +324,7 @@
                                     <th>Win Rate</th>
                                     <th>K/D Ratio</th>
                                     <th>Kills / Round</th>
-                                    <th>Headshot %</th>
+                                    <th>HS %</th>
                                 </tr>
                             </thead>
                             <tbody id="map-stats-rows">
@@ -369,7 +369,7 @@
                 </div>
                 <div class="card-body">
                     <p class="description-text text-sm spacer-y-xs">
-                        💡 All matches in the rolling 30-day window are scanned for 100% accurate ban prediction. Click on any match row to view the full team rosters and FACEIT room link.
+                        💡 Click on any match row to view the full team rosters with player avatars and direct FACEIT room /scoreboard link.
                     </p>
                     <div class="table-responsive">
                         <table class="data-table interactive-table">
@@ -415,7 +415,7 @@
                                 <span class="prediction-label">Next Infraction Ban Duration</span>
                                 <span class="prediction-time" id="next-cooldown-time">30 Minutes</span>
                                 <p class="prediction-desc">
-                                    Based on <strong id="active-infractions-count">0</strong> total infractions (official bans + 100% complete 30-day match log scan).
+                                    Based on <strong id="active-infractions-count">0</strong> active infractions in your consecutive 30-day escalation chain.
                                 </p>
                             </div>
                             
@@ -446,11 +446,11 @@
                     <section class="card ladder-card h-full">
                         <div class="card-header space-between">
                             <h2>Ban Escalation Ladder</h2>
-                            <span class="badge">30-day window</span>
+                            <span class="badge">30-day reset rule</span>
                         </div>
                         <div class="card-body">
                             <p class="description-text text-sm spacer-y-xs">
-                                FACEIT bans escalate based on your active infraction count within the last 30 days.
+                                FACEIT infractions reset to Tier 1 after 30 clean consecutive days. Consecutive infractions within 30 days escalate your ban up to 1 week.
                             </p>
                             <div class="ban-ladder" id="escalation-ladder">
                                 <!-- Populated dynamically via JS -->
@@ -499,7 +499,7 @@
                         <summary>How does the ban escalation system work?</summary>
                         <div class="faq-content">
                             <p>
-                                FACEIT tracks "Leaver", "noShow", and "AFK/Declined" infractions under a single, unified account index. Cooldowns are automated and stack. Every infraction remains in your ban history for a rolling <strong>30-day period</strong>. Multiple infractions within 30 days escalate your ban length significantly (up to 7 days).
+                                FACEIT tracks "Leaver", "noShow", and "AFK/Declined" infractions under a single, unified account index. Cooldowns are automated and stack. An infraction resets only after <strong>30 consecutive days without any infraction</strong>. If a new infraction occurs within 30 days of a previous one, your ban tier escalates automatically (30m → 2h → 4h → 8h → 12h → 24h → 48h → 1 week).
                             </p>
                         </div>
                     </details>
@@ -508,7 +508,7 @@
                         <summary>Why didn't my recent Leaver cooldown show up in official ban history?</summary>
                         <div class="faq-content">
                             <p>
-                                FACEIT's public <code class="code-highlight">/bans</code> API endpoint primarily returns long-term admin bans (e.g. Verbal Abuse, Admin Bans). Short automated queue/leaver bans (30m, 2h) are removed by FACEIT's database after expiration. Our application automatically scans your <strong>recent match logs</strong> for DNF/Leaver flags within the last 30 days to calculate your true escalation level!
+                                FACEIT's public <code class="code-highlight">/bans</code> API endpoint primarily returns long-term admin bans (e.g. Verbal Abuse, Admin Bans). Short automated queue/leaver bans (30m, 2h) are removed by FACEIT's database after expiration. Our application automatically scans your <strong>recent match logs</strong> for DNF/Leaver flags to calculate your true escalation level!
                             </p>
                         </div>
                     </details>
@@ -544,12 +544,16 @@
     <!-- Detailed Match Inspection Modal -->
     <div class="modal-backdrop" id="match-modal" style="display: none;" onclick="closeMatchModal(event)">
         <div class="modal-dialog card" onclick="event.stopPropagation()">
-            <div class="card-header space-between">
-                <div class="modal-title-box">
-                    <h2 id="modal-match-map">Match Details</h2>
-                    <span class="muted text-sm" id="modal-match-date">Date & Time</span>
+            <div class="modal-map-banner" id="modal-map-banner">
+                <div class="modal-map-overlay">
+                    <div class="space-between w-full">
+                        <div class="modal-title-box">
+                            <h2 id="modal-match-map">Match Details</h2>
+                            <span class="muted text-sm" id="modal-match-date">Date & Time</span>
+                        </div>
+                        <button class="modal-close-btn" onclick="closeMatchModal()">✕</button>
+                    </div>
                 </div>
-                <button class="modal-close-btn" onclick="closeMatchModal()">✕</button>
             </div>
             <div class="card-body" id="modal-match-body">
                 <div class="loading-container text-center">
@@ -560,7 +564,7 @@
             <div class="card-footer space-between">
                 <a id="modal-faceit-link" href="#" target="_blank" class="btn btn-primary btn-sm">
                     <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                    Open Room on FACEIT.com
+                    Open Room Scoreboard on FACEIT.com
                 </a>
                 <button class="btn btn-secondary btn-sm" onclick="closeMatchModal()">Close</button>
             </div>
@@ -574,6 +578,6 @@
         </div>
     </footer>
 
-    <script src="app.js?v=3.4.0"></script>
+    <script src="app.js?v=3.5.0"></script>
 </body>
 </html>

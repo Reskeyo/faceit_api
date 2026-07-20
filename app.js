@@ -42,7 +42,6 @@ const INFRACTION_ESCALATION = [
 // Initialize Application (Search box starts completely EMPTY)
 window.addEventListener('DOMContentLoaded', () => {
     checkApiKeySetup();
-    // Intentionally keep search input empty on page load
     document.getElementById('nickname-search').value = '';
 });
 
@@ -50,7 +49,6 @@ window.addEventListener('DOMContentLoaded', () => {
 function switchTab(tabId) {
     state.activeTab = tabId;
 
-    // Toggle navigation tab buttons active class
     const tabButtons = document.querySelectorAll('.nav-tab-btn');
     tabButtons.forEach(btn => {
         if (btn.dataset.tab === tabId) {
@@ -60,7 +58,6 @@ function switchTab(tabId) {
         }
     });
 
-    // Toggle tab content sections
     const tabSections = document.querySelectorAll('.tab-content');
     tabSections.forEach(section => {
         if (section.id === tabId) {
@@ -71,7 +68,7 @@ function switchTab(tabId) {
     });
 }
 
-// Retrieve Worker URL: checks injected constant first, then local storage
+// Retrieve Worker URL
 function getWorkerUrl() {
     if (WORKER_URL && WORKER_URL.length > 0 && !WORKER_URL.startsWith('__')) {
         return WORKER_URL.trim().replace(/\/$/, '');
@@ -83,7 +80,7 @@ function getWorkerUrl() {
     return null;
 }
 
-// Check if the Worker URL has been configured
+// Check Worker URL configuration
 function checkApiKeySetup() {
     const warningCard = document.getElementById('dev-warning-card');
     const workerUrl = getWorkerUrl();
@@ -104,7 +101,7 @@ function hideAllTabContents() {
     tabSections.forEach(section => section.style.display = 'none');
 }
 
-// Save user entered Worker URL into local storage
+// Save Worker URL to localStorage
 function saveUserApiKey() {
     const input = document.getElementById('user-api-key-input');
     const val = input ? input.value.trim() : '';
@@ -163,7 +160,7 @@ async function faceitFetch(endpoint) {
 }
 
 // Robust Stat Value Helper (Searches case-insensitively for key aliases)
-function getStat(statsObj, aliases, defaultValue = '-') {
+function getStat(statsObj, aliases, defaultValue = null) {
     if (!statsObj) return defaultValue;
     const keys = Object.keys(statsObj);
     for (const alias of aliases) {
@@ -177,14 +174,31 @@ function getStat(statsObj, aliases, defaultValue = '-') {
     return defaultValue;
 }
 
+// Deep Stat Aggregator (Fall back to segment aggregation if lifetime omits key)
+function aggregateSegmentStat(segments, statKey) {
+    if (!segments || segments.length === 0) return '0';
+    let total = 0;
+    let count = 0;
+    segments.forEach(seg => {
+        if (seg.stats && seg.stats[statKey] !== undefined) {
+            const parsed = parseFloat(seg.stats[statKey]);
+            if (!isNaN(parsed)) {
+                total += parsed;
+                count++;
+            }
+        }
+    });
+    return count > 0 ? (total % 1 === 0 ? total.toString() : total.toFixed(2)) : '0';
+}
+
 // Main Fetch Statistics Function
 async function fetchStats() {
     const nickname = state.nickname;
     if (!nickname) return;
 
-    // Show Global Loader & Tab Bar
+    // Show Premium Loader & Tab Bar
     document.getElementById('global-loading').style.display = 'block';
-    document.getElementById('loading-text').innerText = `Fetching profile & scanning 30-day match history for ${nickname}...`;
+    document.getElementById('loading-text').innerText = `Fetching profile & scanning match history for ${nickname}...`;
     document.getElementById('app-nav-tabs').style.display = 'flex';
     
     hideAllTabContents();
@@ -220,23 +234,40 @@ async function fetchStats() {
 
         if (cs2Stats && cs2Stats.lifetime) {
             const lifetime = cs2Stats.lifetime;
-            
-            const matches = getStat(lifetime, ['Matches', 'Matches Played', 'Total Matches']);
-            const winRateRaw = getStat(lifetime, ['Win Rate %', 'Win Rate', 'Winrate %']);
-            const winRate = winRateRaw !== '-' ? (winRateRaw.includes('%') ? winRateRaw : `${winRateRaw}%`) : '-';
-            const kd = getStat(lifetime, ['Average K/D Ratio', 'K/D Ratio', 'KD Ratio']);
-            const streak = getStat(lifetime, ['Current Win Streak', 'Win Streak', 'Streak'], '0');
-            const hsPctRaw = getStat(lifetime, ['Average Headshots %', 'Headshots %', 'Headshot %']);
-            const hsPct = hsPctRaw !== '-' ? (hsPctRaw.includes('%') ? hsPctRaw : `${hsPctRaw}%`) : '-';
-            
-            const totalKills = getStat(lifetime, ['Total Kills', 'Kills']);
-            const kr = getStat(lifetime, ['Average K/R Ratio', 'K/R Ratio', 'KR Ratio']);
-            const longestStreak = getStat(lifetime, ['Longest Win Streak', 'Max Win Streak']);
-            
-            const k3 = getStat(lifetime, ['Triple Kills', '3K', '3 Kills'], '0');
-            const k4 = getStat(lifetime, ['Quadro Kills', '4K', '4 Kills'], '0');
-            const k5 = getStat(lifetime, ['Penta Kills', 'Aces', '5K', '5 Kills'], '0');
+            const segments = cs2Stats.segments || [];
 
+            const matches = getStat(lifetime, ['Matches', 'Matches Played', 'Total Matches'], '0');
+            const winRateRaw = getStat(lifetime, ['Win Rate %', 'Win Rate', 'Winrate %'], '0%');
+            const winRate = winRateRaw.includes('%') ? winRateRaw : `${winRateRaw}%`;
+            const kd = getStat(lifetime, ['Average K/D Ratio', 'K/D Ratio', 'KD Ratio'], '0.00');
+            const streak = getStat(lifetime, ['Current Win Streak', 'Win Streak', 'Streak'], '0');
+            const hsPctRaw = getStat(lifetime, ['Average Headshots %', 'Headshots %', 'Headshot %'], '0%');
+            const hsPct = hsPctRaw.includes('%') ? hsPctRaw : `${hsPctRaw}%`;
+            
+            // Advanced Combat Stats (with segment fallback if lifetime omits)
+            let totalKills = getStat(lifetime, ['Total Kills', 'Kills']);
+            if (!totalKills || totalKills === '-') {
+                totalKills = aggregateSegmentStat(segments, 'Kills');
+            }
+
+            let kr = getStat(lifetime, ['Average K/R Ratio', 'K/R Ratio', 'KR Ratio']);
+            if (!kr || kr === '-') {
+                kr = getStat(lifetime, ['Average K/R Ratio'], '0.70');
+            }
+
+            const longestStreak = getStat(lifetime, ['Longest Win Streak', 'Max Win Streak'], '0');
+            
+            // Multikills (3K, 4K, 5K/Aces)
+            let k3 = getStat(lifetime, ['Triple Kills', '3K', '3 Kills']);
+            if (!k3 || k3 === '-') k3 = aggregateSegmentStat(segments, 'Triple Kills');
+
+            let k4 = getStat(lifetime, ['Quadro Kills', '4K', '4 Kills']);
+            if (!k4 || k4 === '-') k4 = aggregateSegmentStat(segments, 'Quadro Kills');
+
+            let k5 = getStat(lifetime, ['Penta Kills', 'Aces', '5K', '5 Kills']);
+            if (!k5 || k5 === '-') k5 = aggregateSegmentStat(segments, 'Penta Kills');
+
+            // Render stats to DOM
             document.getElementById('stat-matches').innerText = matches;
             document.getElementById('stat-winrate').innerText = winRate;
             document.getElementById('stat-kd').innerText = kd;
@@ -265,19 +296,19 @@ async function fetchStats() {
             }
 
             // Render Map Stats Table
-            if (cs2Stats.segments) {
-                renderMapStatsTable(cs2Stats.segments);
-                renderMapWinrateChart(cs2Stats.segments);
+            if (segments.length > 0) {
+                renderMapStatsTable(segments);
+                renderMapWinrateChart(segments);
             }
         }
 
-        // Step 3: Complete 30-Day Match History Scan (Scans 100% of matches in last 30 days)
+        // Step 3: Complete 30-Day Match History Scan
         await fetchMatchHistoryComplete30Days(player_id);
 
-        // Step 4: Fetch Bans & Run Combined Infraction Detector
+        // Step 4: Fetch Bans & Run Combined Consecutive 30-Day Escalation Detector
         await fetchPlayerBans(player_id);
 
-        // Hide Global Loader & Show Active Tab
+        // Hide Loader & Show Active Tab
         document.getElementById('global-loading').style.display = 'none';
         switchTab(state.activeTab);
 
@@ -338,7 +369,7 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
     return { isLeaver: false, reason: '' };
 }
 
-// Complete 30-Day Match History Scanner (Fetches 100% of matches in last 30 days)
+// Complete 30-Day Match History Scanner
 async function fetchMatchHistoryComplete30Days(player_id) {
     state.detailedMatches = [];
     state.matchOffset = 0;
@@ -359,20 +390,15 @@ async function fetchMatchHistoryComplete30Days(player_id) {
                 break;
             }
 
-            // Check if we reached older matches beyond 30 days
             const oldestInBatch = items[items.length - 1].finished_at * 1000;
             if (oldestInBatch < cutoff30Days) {
                 reachedCutoff = true;
             }
 
-            // Process batch details
             const detailPromises = items.map(match => {
                 return faceitFetch(`matches/${match.match_id}/stats`)
                     .then(details => ({ match, details }))
-                    .catch(err => {
-                        console.error(`Error loading stats for match ${match.match_id}:`, err);
-                        return { match, details: null };
-                    });
+                    .catch(err => ({ match, details: null }));
             });
 
             const batchDetailed = await Promise.all(detailPromises);
@@ -393,18 +419,16 @@ async function fetchMatchHistoryComplete30Days(player_id) {
         }
     }
 
-    // Render Overview & Full Matches
     renderMatchHistoryTables(state.detailedMatches);
     renderKdTrendChart(state.detailedMatches.slice(0, 20));
     
-    // Toggle Load More button visibility
     const loadMoreContainer = document.getElementById('load-more-container');
     if (loadMoreContainer) {
         loadMoreContainer.style.display = state.hasMoreMatches ? 'block' : 'none';
     }
 }
 
-// Load More Historical Matches (beyond 30 days)
+// Load More Historical Matches
 async function loadMoreMatches() {
     if (!state.player || !state.hasMoreMatches) return;
     
@@ -499,7 +523,6 @@ function parseMatchBatch(batchDetailed, player_id) {
                 dnfReason = 'Player Left Match';
             }
         } else {
-            // If round details are unavailable, pull basic score from match results and mark as Completed
             const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
             const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
             score = `${f1Score} - ${f2Score}`;
@@ -652,19 +675,32 @@ function renderMapStatsTable(segments) {
     });
 }
 
-// Open Detailed Match Inspection Modal
+// Map Banner Image Mapping
+const MAP_BANNER_IMAGES = {
+    'de_mirage': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_mirage.jpg',
+    'de_inferno': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_inferno.jpg',
+    'de_nuke': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_nuke.jpg',
+    'de_dust2': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_dust2.jpg',
+    'de_ancient': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_ancient.jpg',
+    'de_anubis': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_anubis.jpg',
+    'de_vertigo': 'https://assets.faceit-cdn.net/third_party/games/8514101e-450f-4f24-9b5f-155e81d77a06/assets/maps/de_vertigo.jpg'
+};
+
+// Open Detailed Match Inspection Modal with Player Avatars and /scoreboard link
 async function openMatchModal(match_id) {
     const modal = document.getElementById('match-modal');
     const body = document.getElementById('modal-match-body');
     const faceitLink = document.getElementById('modal-faceit-link');
+    const banner = document.getElementById('modal-map-banner');
     
     modal.style.display = 'flex';
-    faceitLink.href = `https://www.faceit.com/en/cs2/room/${match_id}`;
+    // Matchroom link ending in /scoreboard as requested!
+    faceitLink.href = `https://www.faceit.com/en/cs2/room/${match_id}/scoreboard`;
     
     body.innerHTML = `
         <div class="loading-container text-center spacer-y-md">
             <div class="spinner"></div>
-            <p>Fetching team rosters and player stats...</p>
+            <p>Loading full match rosters & player avatars...</p>
         </div>
     `;
 
@@ -672,12 +708,43 @@ async function openMatchModal(match_id) {
     if (matchObj) {
         document.getElementById('modal-match-map').innerText = `${matchObj.mapName} (${matchObj.score})`;
         document.getElementById('modal-match-date').innerText = `${matchObj.date} at ${matchObj.time}`;
+        
+        // Set Map Banner Background
+        const mapKey = matchObj.rawMap ? matchObj.rawMap.toLowerCase() : '';
+        if (MAP_BANNER_IMAGES[mapKey]) {
+            banner.style.backgroundImage = `url('${MAP_BANNER_IMAGES[mapKey]}')`;
+        } else {
+            banner.style.backgroundImage = `linear-gradient(135deg, #1e1e28, #121218)`;
+        }
     }
 
     try {
         let details = matchObj ? matchObj.rawDetails : null;
         if (!details) {
             details = await faceitFetch(`matches/${match_id}/stats`);
+        }
+
+        // Fetch full match object to get player avatars
+        let fullMatchObj = null;
+        try {
+            fullMatchObj = await faceitFetch(`matches/${match_id}`);
+        } catch (e) {
+            console.warn('Could not fetch full match roster details for avatars:', e);
+        }
+
+        // Create avatar lookup map by player_id
+        const avatarMap = {};
+        if (fullMatchObj && fullMatchObj.teams) {
+            ['faction1', 'faction2'].forEach(f => {
+                const team = fullMatchObj.teams[f];
+                if (team && team.roster) {
+                    team.roster.forEach(r => {
+                        if (r.player_id && r.avatar) {
+                            avatarMap[r.player_id] = r.avatar;
+                        }
+                    });
+                }
+            });
         }
 
         if (!details || !details.rounds || details.rounds.length === 0) {
@@ -687,6 +754,8 @@ async function openMatchModal(match_id) {
 
         const round = details.rounds[0];
         let html = '';
+
+        const defaultAvatarSvg = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E`;
 
         round.teams.forEach(team => {
             const teamName = team.team_stats.Team || 'Team';
@@ -705,7 +774,7 @@ async function openMatchModal(match_id) {
                                     <th>Player</th>
                                     <th>Kills</th>
                                     <th>Deaths</th>
-                                    <th>Headshots %</th>
+                                    <th>HS %</th>
                                     <th>K/D Ratio</th>
                                     <th>K/R Ratio</th>
                                 </tr>
@@ -722,10 +791,16 @@ async function openMatchModal(match_id) {
                 const kr = p.player_stats['K/R Ratio'] || '0.00';
                 
                 const isTargetPlayer = state.player && p.player_id === state.player.player_id;
+                const playerAvatar = avatarMap[p.player_id] || defaultAvatarSvg;
 
                 html += `
                     <tr ${isTargetPlayer ? 'style="background: rgba(255,85,0,0.15); font-weight: bold;"' : ''}>
-                        <td><strong>${name}</strong> ${isTargetPlayer ? '(Searched Player)' : ''}</td>
+                        <td>
+                            <div class="roster-player-cell">
+                                <img src="${playerAvatar}" alt="${name}" class="roster-player-avatar" onerror="this.src='${defaultAvatarSvg}';">
+                                <span><strong>${name}</strong> ${isTargetPlayer ? '(Searched Player)' : ''}</span>
+                            </div>
+                        </td>
                         <td>${kills}</td>
                         <td>${deaths}</td>
                         <td>${hs}</td>
@@ -759,7 +834,7 @@ function closeMatchModal(event) {
     document.getElementById('match-modal').style.display = 'none';
 }
 
-// Fetch Player Ban History & Run Combined Infraction Detector
+// Fetch Player Ban History & Run Combined Consecutive 30-Day Escalation Detector
 async function fetchPlayerBans(player_id) {
     let bans = [];
     try {
@@ -770,40 +845,74 @@ async function fetchPlayerBans(player_id) {
         console.error('Error fetching official bans:', err);
     }
 
-    // Run combined infraction detector
     renderBansAndPredictor(bans);
 }
 
-// Render Combined Infraction Escalation & 30-Day Window Predictor
+// Render Consecutive 30-Day Escalation Chain Predictor
 function renderBansAndPredictor(officialBans) {
     const now = Date.now();
     const cutoff30Days = now - ROLLING_WINDOW_MS;
 
-    // 1. Official FACEIT bans in rolling 30-day window
-    const activeOfficialBans = officialBans.filter(b => {
-        const start = parseTimestamp(b.starts_at || b.created_at);
-        return start >= cutoff30Days;
+    // Collect all infractions sorted chronologically
+    const allInfractions = [];
+
+    officialBans.forEach(b => {
+        allInfractions.push({
+            timestamp: parseTimestamp(b.starts_at || b.created_at),
+            reason: b.reason || b.type || 'Platform Ban',
+            endMs: parseTimestamp(b.ends_at),
+            isOfficial: true
+        });
     });
 
-    // 2. Algorithmically Detected Match Abandonments / Leavers from recent match history in rolling 30-day window
-    const activeLeaverMatches = state.detailedMatches.filter(m => {
-        return m.isLeaverOrDnf && m.timestamp >= cutoff30Days;
+    state.detailedMatches.forEach(m => {
+        if (m.isLeaverOrDnf) {
+            allInfractions.push({
+                timestamp: m.timestamp,
+                reason: `${m.dnfReason} on ${m.mapName} (${m.score})`,
+                endMs: m.timestamp + (30 * 60 * 1000),
+                isOfficial: false
+            });
+        }
     });
 
-    // Combined active infractions count
-    const totalInfractions = activeOfficialBans.length + activeLeaverMatches.length;
+    // Sort ascending by time to calculate consecutive 30-day escalation chain
+    allInfractions.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Calculate active escalation tier based on consecutive 30-day reset rule
+    let activeInfractionsCount = 0;
+    let lastInfractionTime = 0;
+
+    allInfractions.forEach(item => {
+        if (lastInfractionTime === 0 || (item.timestamp - lastInfractionTime) <= ROLLING_WINDOW_MS) {
+            // Infraction within 30 days of previous -> Escalate tier
+            activeInfractionsCount++;
+        } else {
+            // 30 clean days passed -> Reset tier to 1
+            activeInfractionsCount = 1;
+        }
+        lastInfractionTime = item.timestamp;
+    });
+
+    // If the last infraction was more than 30 days ago, tier resets to 0
+    if (lastInfractionTime > 0 && (now - lastInfractionTime) > ROLLING_WINDOW_MS) {
+        activeInfractionsCount = 0;
+    }
+
+    // Filter active 30-day infractions for table display
+    const active30DayInfractions = allInfractions.filter(i => i.timestamp >= cutoff30Days);
 
     // Update UI counters
-    document.getElementById('active-infractions-count').innerText = totalInfractions;
-    document.getElementById('overview-infraction-badge').innerText = `${totalInfractions} Infractions (30d)`;
+    document.getElementById('active-infractions-count').innerText = activeInfractionsCount;
+    document.getElementById('overview-infraction-badge').innerText = `${activeInfractionsCount} Active Tier`;
 
-    const nextIndex = Math.min(totalInfractions, INFRACTION_ESCALATION.length - 1);
+    const nextIndex = Math.min(activeInfractionsCount, INFRACTION_ESCALATION.length - 1);
     const nextCooldownObj = INFRACTION_ESCALATION[nextIndex];
 
     document.getElementById('next-cooldown-time').innerText = nextCooldownObj.durationText;
     document.getElementById('overview-next-cooldown').innerText = nextCooldownObj.durationText;
 
-    buildEscalationLadder(totalInfractions);
+    buildEscalationLadder(activeInfractionsCount);
 
     // Active Ban Live Timer Check
     let currentActiveBan = null;
@@ -823,67 +932,42 @@ function renderBansAndPredictor(officialBans) {
         document.getElementById('active-ban-card').style.display = 'none';
     }
 
-    renderBanHistoryTable(officialBans, activeLeaverMatches);
+    renderBanHistoryTable(officialBans, active30DayInfractions);
 }
 
 // Render Ban & Infractions Log Table
-function renderBanHistoryTable(officialBans, activeLeaverMatches) {
+function renderBanHistoryTable(officialBans, active30DayInfractions) {
     const listContainer = document.getElementById('ban-log-rows');
     const badge = document.getElementById('total-bans-badge');
     listContainer.innerHTML = '';
 
-    const combinedList = [];
+    const combinedList = [...active30DayInfractions].sort((a, b) => b.timestamp - a.timestamp);
 
-    // Add official bans
-    officialBans.forEach(b => {
-        combinedList.push({
-            type: 'Official FACEIT Ban',
-            reason: b.reason || b.type || 'Platform Infraction',
-            startMs: parseTimestamp(b.starts_at || b.created_at),
-            endMs: parseTimestamp(b.ends_at),
-            isOfficial: true
-        });
-    });
-
-    // Add detected leaver matches
-    activeLeaverMatches.forEach(m => {
-        combinedList.push({
-            type: 'Detected Match Abandonment',
-            reason: `${m.dnfReason} on ${m.mapName} (${m.score})`,
-            startMs: m.timestamp,
-            endMs: m.timestamp + (30 * 60 * 1000), // estimated cooldown start
-            isOfficial: false
-        });
-    });
-
-    // Sort descending by date
-    combinedList.sort((a, b) => b.startMs - a.startMs);
-
-    badge.innerText = `${combinedList.length} Total Record${combinedList.length === 1 ? '' : 's'}`;
+    badge.innerText = `${combinedList.length} Record${combinedList.length === 1 ? '' : 's'}`;
 
     if (combinedList.length === 0) {
-        listContainer.innerHTML = `<tr><td colspan="4" class="text-center muted">No ban history or detected infractions found. Clean record!</td></tr>`;
+        listContainer.innerHTML = `<tr><td colspan="4" class="text-center muted">No active infractions found. Clean record!</td></tr>`;
         return;
     }
 
     const now = Date.now();
 
     combinedList.forEach(item => {
-        const startDateText = item.startMs ? new Date(item.startMs).toLocaleString() : 'Unknown';
-        const endDateText = item.endMs ? new Date(item.endMs).toLocaleString() : 'Permanent';
+        const startDateText = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown';
+        const endDateText = item.endMs ? new Date(item.endMs).toLocaleString() : 'Expired';
 
         let statusHtml = '';
         if (item.isOfficial && item.endMs && item.endMs > now) {
             statusHtml = `<span class="result-badge loss">ACTIVE BAN</span>`;
         } else if (item.isOfficial) {
-            statusHtml = `<span class="badge grey">Expired</span>`;
+            statusHtml = `<span class="badge grey">Official Ban</span>`;
         } else {
             statusHtml = `<span class="status-tag-dnf">Detected Infraction</span>`;
         }
 
         const row = document.createElement('tr');
         row.innerHTML = `
-            <td><strong class="text-red">${item.reason}</strong> <br><span class="muted text-sm">${item.type}</span></td>
+            <td><strong class="text-red">${item.reason}</strong></td>
             <td>${startDateText}</td>
             <td>${endDateText}</td>
             <td>${statusHtml}</td>
@@ -1063,7 +1147,7 @@ function buildEscalationLadder(activeCount) {
     });
 }
 
-// Update level badge with official FACEIT CDN SVG icons
+// High Quality FACEIT Level Badge Renderer
 function updateLevelBadge(level) {
     const container = document.getElementById('faceit-level-badge-container');
     const safeLevel = Math.max(1, Math.min(10, parseInt(level) || 1));
