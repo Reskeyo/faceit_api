@@ -284,7 +284,7 @@ async function fetchStats() {
     }
 }
 
-// Deep Inspector: Scans all attributes in player_stats for Leaver/AFK/DNF flags
+// Algorithmic Leaver / Disconnect Inspector
 function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
     if (!pStats) return { isLeaver: true, reason: 'No Player Stats Recorded' };
 
@@ -293,7 +293,7 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
         return { isLeaver: true, reason: 'Flagged as Leaver' };
     }
     if (pStats.AFK === '1' || pStats.afk === '1' || pStats.AFK === 'true') {
-        return { isLeaver: true, reason: 'Flagged as AFK' };
+        return { isLeaver: true, reason: 'Flagged as AFK / Warmup Disconnect' };
     }
     if (pStats.DNFFlag === '1' || pStats.dnf === '1' || pStats.Status === 'DNF') {
         return { isLeaver: true, reason: 'Did Not Finish (DNF)' };
@@ -314,13 +314,20 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
         }
     }
 
-    // Check zero stats in a full match (> 5 rounds)
+    // Check zero stats or abnormal disconnect performance in full match
     const kills = parseInt(pStats.Kills) || 0;
     const deaths = parseInt(pStats.Deaths) || 0;
+    const krRatio = parseFloat(pStats['K/R Ratio']) || 0;
+    const adr = parseFloat(pStats.ADR) || 0;
     const totalRounds = roundStats ? (parseInt(roundStats.Rounds) || 16) : 16;
 
     if (kills === 0 && deaths === 0 && totalRounds > 5) {
-        return { isLeaver: true, reason: 'Zero Activity / Disconnect' };
+        return { isLeaver: true, reason: 'Warmup Disconnect / DNF' };
+    }
+
+    // Algorithmic check for matches where player missed half the rounds (e.g. K/R < 0.38 AND ADR < 45 on a 19+ round match)
+    if (totalRounds >= 18 && krRatio > 0 && krRatio < 0.38 && adr < 45.0 && deaths < (totalRounds - 2)) {
+        return { isLeaver: true, reason: 'Early Disconnect / Abandoned' };
     }
 
     return { isLeaver: false, reason: '' };
@@ -381,7 +388,7 @@ async function fetchMatchHistory(player_id) {
                         const winFlag = p.player_stats.Result;
                         result = winFlag === '1' ? 'W' : 'L';
 
-                        // Run Deep Leaver Inspector on player stats
+                        // Run Deep Algorithmic Leaver Inspector
                         const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats, match.results);
                         if (leaverCheck.isLeaver) {
                             isLeaverOrDnf = true;
@@ -693,7 +700,7 @@ function renderBansAndPredictor(officialBans) {
         return start >= cutoff30Days;
     });
 
-    // 2. Detected Match Abandonments / Leavers from recent match history in rolling 30-day window
+    // 2. Algorithmically Detected Match Abandonments / Leavers from recent match history in rolling 30-day window
     const activeLeaverMatches = state.detailedMatches.filter(m => {
         return m.isLeaverOrDnf && m.timestamp >= cutoff30Days;
     });
@@ -971,12 +978,15 @@ function buildEscalationLadder(activeCount) {
     });
 }
 
-// Update level badge with authentic FACEIT shield badge styling
+// Update level badge with official FACEIT CDN SVG icons
 function updateLevelBadge(level) {
     const container = document.getElementById('faceit-level-badge-container');
+    const safeLevel = Math.max(1, Math.min(10, parseInt(level) || 1));
+    
+    // Official FACEIT CDN SVG Badge URL
+    const faceitCdnSvg = `https://cdn-frontend.faceit.com/web/960/src/app/assets/images-e/skill-icons/skill_level_${safeLevel}_svg.svg`;
+    
     container.innerHTML = `
-        <div class="faceit-badge lvl-${level}">
-            <span class="badge-num">${level}</span>
-        </div>
+        <img src="${faceitCdnSvg}" alt="FACEIT Level ${safeLevel}" class="faceit-level-svg" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'faceit-badge lvl-${safeLevel}\\'>${safeLevel}</div>';">
     `;
 }

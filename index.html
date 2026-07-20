@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="styles.css?v=3.1.0">
+    <link rel="stylesheet" href="styles.css?v=3.2.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
 </head>
 <body>
@@ -20,7 +20,7 @@
         <div class="container header-container">
             <div class="logo">
                 <span class="logo-faceit-icon">
-                    <svg viewBox="0 0 24 24" width="26" height="26" fill="#FF5500"><path d="M22.5 3H1.5L8.5 13.5L1.5 21H22.5L15.5 13.5L22.5 3Z"/></svg>
+                    <svg viewBox="0 0 24 24" width="28" height="28" fill="#FF5500"><path d="M22.5 3H1.5L8.5 13.5L1.5 21H22.5L15.5 13.5L22.5 3Z"/></svg>
                 </span>
                 <span class="logo-main">FACEIT <span class="logo-accent">CS2 UTILITY</span></span>
             </div>
@@ -32,14 +32,22 @@
     </header>
 
     <main class="container">
-        <!-- Search & Lookup Section (Starts completely empty) -->
-        <section class="search-section spacer-y-md">
-            <div class="search-card card">
-                <div class="card-body">
+        <!-- Hero Section & Centered Search Bar -->
+        <section class="hero-section spacer-y-lg">
+            <div class="hero-content text-center">
+                <h1 class="hero-title">
+                    CS2 <span class="hero-highlight">FACEIT STATS</span> & BAN PREDICTOR
+                </h1>
+                <p class="hero-subtitle">
+                    Instant Matchmaking Analytics, 30-Day Infraction Calculator & Level Tracker
+                </p>
+
+                <!-- Centered Search Card -->
+                <div class="hero-search-box spacer-y-md">
                     <form id="search-form" onsubmit="handleSearchSubmit(event)">
-                        <div class="search-bar-row">
-                            <input type="text" id="nickname-search" placeholder="Enter FACEIT Nickname (e.g. s1mple)" required autocomplete="off">
-                            <button type="submit" class="btn btn-primary search-btn" id="search-submit-btn">
+                        <div class="search-bar-row hero-search-row">
+                            <input type="text" id="nickname-search" placeholder="Enter FACEIT Nickname (e.g. s1mple or Woffellz)" required autocomplete="off">
+                            <button type="submit" class="btn btn-primary search-btn hero-search-btn" id="search-submit-btn">
                                 <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="11" cy="11" r="8"/>
                                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -48,6 +56,22 @@
                             </button>
                         </div>
                     </form>
+                </div>
+
+                <!-- Feature Highlights Pills -->
+                <div class="hero-features-row spacer-y-sm">
+                    <div class="hero-feature-pill">
+                        <span class="hero-pill-icon">⚡</span>
+                        <span>Instant CS2 Performance Stats</span>
+                    </div>
+                    <div class="hero-feature-pill">
+                        <span class="hero-pill-icon">🛡️</span>
+                        <span>Algorithmic 30-Day Ban Predictor</span>
+                    </div>
+                    <div class="hero-feature-pill">
+                        <span class="hero-pill-icon">📜</span>
+                        <span>50-Match Inspector & Filters</span>
+                    </div>
                 </div>
             </div>
         </section>
@@ -118,7 +142,7 @@
                             </div>
                         </div>
                         <div class="level-showcase">
-                            <!-- Dynamic Authentic FACEIT Level Badge Container -->
+                            <!-- Official FACEIT CDN Skill Level Badge Container -->
                             <div id="faceit-level-badge-container">
                                 <div class="faceit-badge lvl-1" id="level-badge-value">
                                     <span class="badge-num">1</span>
@@ -185,7 +209,7 @@
                                     </tr>
                                 </thead>
                                 <tbody id="overview-matches-list">
-                                    <tr><td colspan="6" class="text-center muted">Search a player to view matches.</td></tr>
+                                    <tr><td colspan="6" class="text-center muted">Enter a FACEIT nickname above to search!</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -201,7 +225,7 @@
                         <div class="prediction-alert highlight">
                             <span class="prediction-label">Next Infraction Ban Duration</span>
                             <span class="prediction-time" id="overview-next-cooldown">30 Minutes</span>
-                            <p class="prediction-desc">Based on active infractions in your rolling 30-day window.</p>
+                            <p class="prediction-desc">Based on active infractions detected in your rolling 30-day window.</p>
                         </div>
                         <div class="spacer-y-sm">
                             <button class="btn btn-primary w-full" onclick="switchTab('tab-penalties')">Open Ban Predictor & Escalation Ladder</button>
@@ -349,7 +373,7 @@
                 </div>
                 <div class="card-body">
                     <p class="description-text text-sm spacer-y-xs">
-                        💡 Click on any match row to view the full team roster, player kills, deaths, K/D, and open the official FACEIT match room.
+                        💡 Click on any match row to view the full team rosters, player kills, deaths, K/D, and open the official FACEIT match room.
                     </p>
                     <div class="table-responsive">
                         <table class="data-table interactive-table">
@@ -388,7 +412,7 @@
                                 <span class="prediction-label">Next Infraction Ban Duration</span>
                                 <span class="prediction-time" id="next-cooldown-time">30 Minutes</span>
                                 <p class="prediction-desc">
-                                    Based on <strong id="active-infractions-count">0</strong> total infractions (official bans + detected match abandonments) in your rolling 30-day window.
+                                    Based on <strong id="active-infractions-count">0</strong> total infractions (official bans + algorithmically detected match abandonments) in your rolling 30-day window.
                                 </p>
                             </div>
                             
@@ -547,6 +571,6 @@
         </div>
     </footer>
 
-    <script src="app.js?v=3.1.0"></script>
+    <script src="app.js?v=3.2.0"></script>
 </body>
 </html>
