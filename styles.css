@@ -1125,3 +1125,53 @@ input:focus, select:focus {
     border: 1px solid var(--border-color);
 }
 
+/* Collapsible FAQ Styling */
+details.faq-item {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    padding: 0.85rem 1.25rem;
+    transition: all 0.2s ease;
+}
+
+details.faq-item[open] {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--border-hover);
+}
+
+details.faq-item summary {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+details.faq-item summary::-webkit-details-marker {
+    display: none;
+}
+
+details.faq-item summary::after {
+    content: '❯';
+    font-size: 0.85rem;
+    color: var(--accent-orange);
+    transition: transform 0.2s ease;
+}
+
+details.faq-item[open] summary::after {
+    transform: rotate(90deg);
+}
+
+.faq-content {
+    margin-top: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    line-height: 1.6;
+    border-top: 1px dashed var(--border-color);
+    padding-top: 0.75rem;
+}
+
