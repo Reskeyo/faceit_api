@@ -298,7 +298,7 @@ async function fetchStats() {
             }
         }
 
-        // Step 3: Deep Consecutive Match History Scan (Scans 100+ matches to track rolling 30-day consecutive escalation chains)
+        // Step 3: Deep Consecutive Match History Scan
         await fetchMatchHistoryDeepConsecutiveScan(player_id);
 
         // Step 4: Fetch Bans & Run Combined Consecutive 30-Day Escalation Detector
@@ -316,11 +316,11 @@ async function fetchStats() {
     }
 }
 
-// Algorithmic Leaver / Disconnect / Warmup noShow Inspector
-function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
-    if (!pStats) return { isLeaver: true, reason: 'Warmup noShow / Server Cancelled' };
+// Precise Algorithmic Leaver Inspector
+function checkPlayerLeaverStatus(pStats, roundStats) {
+    if (!pStats) return { isLeaver: false, reason: '' };
 
-    // Check direct known properties
+    // Check explicit leaver/AFK properties
     if (pStats.Leaver === '1' || pStats.leaver === '1' || pStats.Leaver === 'true') {
         return { isLeaver: true, reason: 'Flagged as Leaver' };
     }
@@ -331,22 +331,19 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
         return { isLeaver: true, reason: 'Did Not Finish (DNF)' };
     }
 
-    // Inspect ALL key-value pairs in player_stats case-insensitively
+    // Inspect key-value pairs case-insensitively
     for (const [key, val] of Object.entries(pStats)) {
         const kLow = key.toLowerCase();
         const vLow = String(val).toLowerCase();
         
-        if (kLow.includes('leaver') || kLow.includes('afk') || kLow.includes('noshow') || kLow.includes('dnf') || kLow.includes('abandon')) {
+        if (kLow.includes('leaver') || kLow.includes('afk') || kLow.includes('noshow') || kLow.includes('dnf')) {
             if (vLow === '1' || vLow === 'true' || vLow.includes('yes') || vLow.includes('leaver') || vLow.includes('afk')) {
                 return { isLeaver: true, reason: `Match Flag: ${key}` };
             }
         }
-        if (vLow.includes('leaver') || vLow.includes('afk') || vLow.includes('noshow') || vLow.includes('abandoned')) {
-            return { isLeaver: true, reason: `Status: ${val}` };
-        }
     }
 
-    // Check zero stats in a full match (> 5 rounds) where team played but player did not connect
+    // Check for matches with zero stats in a full match (> 5 rounds) where player failed to connect
     const kills = parseInt(pStats.Kills) || 0;
     const deaths = parseInt(pStats.Deaths) || 0;
     const krRatio = parseFloat(pStats['K/R Ratio']) || 0;
@@ -357,7 +354,7 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
         return { isLeaver: true, reason: 'Warmup Disconnect / DNF' };
     }
 
-    // Check for matches where player disconnected early (e.g. K/R < 0.38 AND ADR < 45 on a 18+ round match with low deaths)
+    // Check for matches where player disconnected early (e.g. K/R < 0.38 AND ADR < 45 on a 18+ round match)
     if (totalRounds >= 18 && krRatio > 0 && krRatio < 0.38 && adr < 45.0 && deaths < (totalRounds - 2)) {
         return { isLeaver: true, reason: 'Early Disconnect / Abandoned' };
     }
@@ -365,13 +362,12 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
     return { isLeaver: false, reason: '' };
 }
 
-// Deep Consecutive Match History Scanner (Scans up to 150 matches to detect rolling consecutive escalation chains)
+// Deep Match History Scanner
 async function fetchMatchHistoryDeepConsecutiveScan(player_id) {
     state.detailedMatches = [];
     state.matchOffset = 0;
     state.hasMoreMatches = true;
 
-    // We scan at least 100 matches to trace consecutive 30-day escalation reset rules
     const targetScanCount = 100;
     let offset = 0;
     const limit = 50;
@@ -477,8 +473,8 @@ function parseMatchBatch(batchDetailed, player_id) {
         let mapName = 'Unknown';
         let score = '-';
         let result = 'L';
-        let kills = 0;
-        let deaths = 0;
+        let kills = '-';
+        let deaths = '-';
         let kdRatio = '0.00';
         let isLeaverOrDnf = false;
         let dnfReason = '';
@@ -500,8 +496,8 @@ function parseMatchBatch(batchDetailed, player_id) {
                     const winFlag = p.player_stats.Result;
                     result = winFlag === '1' ? 'W' : 'L';
 
-                    // Run Deep Algorithmic Leaver Inspector
-                    const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats, match.results);
+                    // Run Precise Algorithmic Leaver Inspector
+                    const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats);
                     if (leaverCheck.isLeaver) {
                         isLeaverOrDnf = true;
                         dnfReason = leaverCheck.reason;
@@ -511,19 +507,16 @@ function parseMatchBatch(batchDetailed, player_id) {
             }
 
             if (!foundPlayer) {
-                isLeaverOrDnf = true;
-                dnfReason = 'Player Left Match';
+                isLeaverOrDnf = false; // Player finished but not listed in team stats
             }
         } else {
-            // Match has NO round stats (Warmup noShow / Server Cancelled before round 1)
+            // Match has no round stats -> Completed match without round stats
             const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
             const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
             score = `${f1Score} - ${f2Score}`;
             result = (match.results && match.results.winner === 'faction1') ? 'W' : 'L';
-            
-            // Warmup noShow flag: Cancelled/aborted match without round stats
-            isLeaverOrDnf = true;
-            dnfReason = 'Warmup noShow / Server Cancelled';
+            isLeaverOrDnf = false;
+            dnfReason = '';
         }
 
         return {
@@ -537,7 +530,7 @@ function parseMatchBatch(batchDetailed, player_id) {
             result,
             kills,
             deaths,
-            kdRatio: parseFloat(kdRatio),
+            kdRatio: typeof kdRatio === 'number' ? kdRatio : parseFloat(kdRatio) || 0,
             isLeaverOrDnf,
             dnfReason,
             rawDetails: details
@@ -558,12 +551,16 @@ function renderMatchHistoryTables(matches) {
             const row = document.createElement('tr');
             row.onclick = () => openMatchModal(m.match_id);
             row.title = "Click to inspect match details";
+            
+            const kdText = m.kills !== '-' ? m.kdRatio.toFixed(2) : '-';
+            const kdColor = m.kills !== '-' ? (m.kdRatio >= 1.0 ? 'text-green' : 'text-red') : '';
+
             row.innerHTML = `
                 <td>${m.date}</td>
                 <td><span class="map-badge">${m.mapName}</span></td>
                 <td>${m.score}</td>
                 <td><span class="result-badge ${m.result === 'W' ? 'win' : 'loss'}">${m.result === 'W' ? 'WIN' : 'LOSS'}</span></td>
-                <td class="font-mono ${m.kdRatio >= 1.0 ? 'text-green' : 'text-red'}">${m.kdRatio.toFixed(2)}</td>
+                <td class="font-mono ${kdColor}">${kdText}</td>
                 <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openMatchModal('${m.match_id}')">Inspect</button></td>
             `;
             overviewList.appendChild(row);
@@ -610,13 +607,17 @@ function applyMatchFilters() {
             statusHtml = `<span class="status-tag-dnf">⚠️ ${m.dnfReason || 'Leaver / DNF'}</span>`;
         }
 
+        const kdText = m.kills !== '-' ? m.kdRatio.toFixed(2) : '-';
+        const kdColor = m.kills !== '-' ? (m.kdRatio >= 1.0 ? 'text-green' : 'text-red') : '';
+        const killsDeathsText = (m.kills !== '-' && m.deaths !== '-') ? `${m.kills} <span class="muted">/</span> ${m.deaths}` : '- / -';
+
         row.innerHTML = `
             <td>${m.date} <span class="muted text-sm">${m.time}</span></td>
             <td><span class="map-badge">${m.mapName}</span></td>
             <td>${m.score}</td>
             <td><span class="result-badge ${m.result === 'W' ? 'win' : 'loss'}">${m.result === 'W' ? 'WIN' : 'LOSS'}</span></td>
-            <td>${m.kills} <span class="muted">/</span> ${m.deaths}</td>
-            <td class="font-mono ${m.kdRatio >= 1.0 ? 'text-green' : 'text-red'}">${m.kdRatio.toFixed(2)}</td>
+            <td>${killsDeathsText}</td>
+            <td class="font-mono ${kdColor}">${kdText}</td>
             <td>${statusHtml}</td>
             <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openMatchModal('${m.match_id}')">Inspect</button></td>
         `;
@@ -687,7 +688,6 @@ async function openMatchModal(match_id) {
     const banner = document.getElementById('modal-map-banner');
     
     modal.style.display = 'flex';
-    // Matchroom link ending in /scoreboard as requested!
     faceitLink.href = `https://www.faceit.com/en/cs2/room/${match_id}/scoreboard`;
     
     body.innerHTML = `
@@ -702,7 +702,6 @@ async function openMatchModal(match_id) {
         document.getElementById('modal-match-map').innerText = `${matchObj.mapName} (${matchObj.score})`;
         document.getElementById('modal-match-date').innerText = `${matchObj.date} at ${matchObj.time}`;
         
-        // Set Map Banner Background
         const mapKey = matchObj.rawMap ? matchObj.rawMap.toLowerCase() : '';
         if (MAP_BANNER_IMAGES[mapKey]) {
             banner.style.backgroundImage = `url('${MAP_BANNER_IMAGES[mapKey]}')`;
@@ -717,7 +716,6 @@ async function openMatchModal(match_id) {
             details = await faceitFetch(`matches/${match_id}/stats`);
         }
 
-        // Fetch full match object to get player avatars
         let fullMatchObj = null;
         try {
             fullMatchObj = await faceitFetch(`matches/${match_id}`);
@@ -725,7 +723,6 @@ async function openMatchModal(match_id) {
             console.warn('Could not fetch full match roster details for avatars:', e);
         }
 
-        // Create avatar lookup map by player_id
         const avatarMap = {};
         if (fullMatchObj && fullMatchObj.teams) {
             ['faction1', 'faction2'].forEach(f => {
@@ -846,7 +843,6 @@ function renderBansAndPredictor(officialBans) {
     const now = Date.now();
     const cutoff30Days = now - ROLLING_WINDOW_MS;
 
-    // Collect all infractions sorted chronologically
     const allInfractions = [];
 
     officialBans.forEach(b => {
@@ -869,33 +865,26 @@ function renderBansAndPredictor(officialBans) {
         }
     });
 
-    // Sort ascending by time to calculate consecutive 30-day escalation chain
     allInfractions.sort((a, b) => a.timestamp - b.timestamp);
 
-    // Calculate active escalation tier based on consecutive 30-day reset rule
     let activeInfractionsCount = 0;
     let lastInfractionTime = 0;
 
     allInfractions.forEach(item => {
         if (lastInfractionTime === 0 || (item.timestamp - lastInfractionTime) <= ROLLING_WINDOW_MS) {
-            // Infraction within 30 days of previous -> Escalate tier
             activeInfractionsCount++;
         } else {
-            // 30 clean days passed -> Reset tier to 1
             activeInfractionsCount = 1;
         }
         lastInfractionTime = item.timestamp;
     });
 
-    // If the last infraction was more than 30 days ago, tier resets to 0
     if (lastInfractionTime > 0 && (now - lastInfractionTime) > ROLLING_WINDOW_MS) {
         activeInfractionsCount = 0;
     }
 
-    // Filter active 30-day infractions for table display
     const active30DayInfractions = allInfractions.filter(i => i.timestamp >= cutoff30Days);
 
-    // Update UI counters
     document.getElementById('active-infractions-count').innerText = activeInfractionsCount;
     document.getElementById('overview-infraction-badge').innerText = `${activeInfractionsCount} Active Tier`;
 
@@ -907,7 +896,6 @@ function renderBansAndPredictor(officialBans) {
 
     buildEscalationLadder(activeInfractionsCount);
 
-    // Active Ban Live Timer Check
     let currentActiveBan = null;
     officialBans.forEach(b => {
         const endMs = parseTimestamp(b.ends_at);
