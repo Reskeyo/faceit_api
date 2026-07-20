@@ -9,6 +9,8 @@ let state = {
     stats: null,
     detailedMatches: [],
     bans: [],
+    matchOffset: 0,
+    hasMoreMatches: true,
     matchFilters: {
         map: 'ALL',
         result: 'ALL',
@@ -124,6 +126,9 @@ function handleSearchSubmit(event) {
     if (!query) return;
 
     state.nickname = query;
+    state.detailedMatches = [];
+    state.matchOffset = 0;
+    state.hasMoreMatches = true;
     
     if (checkApiKeySetup()) {
         fetchStats();
@@ -179,7 +184,7 @@ async function fetchStats() {
 
     // Show Global Loader & Tab Bar
     document.getElementById('global-loading').style.display = 'block';
-    document.getElementById('loading-text').innerText = `Fetching profile & statistics for ${nickname}...`;
+    document.getElementById('loading-text').innerText = `Fetching profile & scanning 30-day match history for ${nickname}...`;
     document.getElementById('app-nav-tabs').style.display = 'flex';
     
     hideAllTabContents();
@@ -266,8 +271,8 @@ async function fetchStats() {
             }
         }
 
-        // Step 3: Fetch Recent Matches (Up to 50 Matches for deep history & accurate Leaver detection)
-        await fetchMatchHistory(player_id);
+        // Step 3: Complete 30-Day Match History Scan (Scans 100% of matches in last 30 days)
+        await fetchMatchHistoryComplete30Days(player_id);
 
         // Step 4: Fetch Bans & Run Combined Infraction Detector
         await fetchPlayerBans(player_id);
@@ -333,114 +338,193 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
     return { isLeaver: false, reason: '' };
 }
 
-// Fetch Detailed Match History (50 Matches)
-async function fetchMatchHistory(player_id) {
-    try {
-        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=50`);
-        const matches = historyData.items || [];
+// Complete 30-Day Match History Scanner (Fetches 100% of matches in last 30 days)
+async function fetchMatchHistoryComplete30Days(player_id) {
+    state.detailedMatches = [];
+    state.matchOffset = 0;
+    state.hasMoreMatches = true;
 
-        if (matches.length === 0) {
-            state.detailedMatches = [];
-            renderMatchHistoryTables([]);
+    const cutoff30Days = Date.now() - ROLLING_WINDOW_MS;
+    let offset = 0;
+    const limit = 100;
+    let reachedCutoff = false;
+
+    while (!reachedCutoff) {
+        try {
+            const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=${limit}&offset=${offset}`);
+            const items = historyData.items || [];
+
+            if (items.length === 0) {
+                state.hasMoreMatches = false;
+                break;
+            }
+
+            // Check if we reached older matches beyond 30 days
+            const oldestInBatch = items[items.length - 1].finished_at * 1000;
+            if (oldestInBatch < cutoff30Days) {
+                reachedCutoff = true;
+            }
+
+            // Process batch details
+            const detailPromises = items.map(match => {
+                return faceitFetch(`matches/${match.match_id}/stats`)
+                    .then(details => ({ match, details }))
+                    .catch(err => {
+                        console.error(`Error loading stats for match ${match.match_id}:`, err);
+                        return { match, details: null };
+                    });
+            });
+
+            const batchDetailed = await Promise.all(detailPromises);
+            const parsedBatch = parseMatchBatch(batchDetailed, player_id);
+
+            state.detailedMatches.push(...parsedBatch);
+            offset += items.length;
+            state.matchOffset = offset;
+
+            if (items.length < limit) {
+                state.hasMoreMatches = false;
+                break;
+            }
+
+        } catch (err) {
+            console.error('Error fetching match history batch:', err);
+            break;
+        }
+    }
+
+    // Render Overview & Full Matches
+    renderMatchHistoryTables(state.detailedMatches);
+    renderKdTrendChart(state.detailedMatches.slice(0, 20));
+    
+    // Toggle Load More button visibility
+    const loadMoreContainer = document.getElementById('load-more-container');
+    if (loadMoreContainer) {
+        loadMoreContainer.style.display = state.hasMoreMatches ? 'block' : 'none';
+    }
+}
+
+// Load More Historical Matches (beyond 30 days)
+async function loadMoreMatches() {
+    if (!state.player || !state.hasMoreMatches) return;
+    
+    const btn = document.getElementById('load-more-btn');
+    if (btn) btn.innerText = 'Loading older matches...';
+
+    const player_id = state.player.player_id;
+    const limit = 50;
+    const offset = state.matchOffset;
+
+    try {
+        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=${limit}&offset=${offset}`);
+        const items = historyData.items || [];
+
+        if (items.length === 0) {
+            state.hasMoreMatches = false;
+            document.getElementById('load-more-container').style.display = 'none';
             return;
         }
 
-        const detailPromises = matches.map(match => {
+        const detailPromises = items.map(match => {
             return faceitFetch(`matches/${match.match_id}/stats`)
                 .then(details => ({ match, details }))
-                .catch(err => {
-                    console.error(`Error loading stats for match ${match.match_id}:`, err);
-                    return { match, details: null };
-                });
+                .catch(err => ({ match, details: null }));
         });
 
-        const detailedMatches = await Promise.all(detailPromises);
-        
-        // Parse match objects
-        const parsedMatches = detailedMatches.map(({ match, details }) => {
-            const dateObj = new Date(match.finished_at * 1000);
-            const date = dateObj.toLocaleDateString();
-            const time = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            let mapName = 'Unknown';
-            let score = '-';
-            let result = 'L';
-            let kills = 0;
-            let deaths = 0;
-            let kdRatio = '0.00';
-            let isLeaverOrDnf = false;
-            let dnfReason = '';
+        const batchDetailed = await Promise.all(detailPromises);
+        const parsedBatch = parseMatchBatch(batchDetailed, player_id);
 
-            if (details && details.rounds && details.rounds.length > 0) {
-                const round = details.rounds[0];
-                mapName = round.round_stats.Map ? round.round_stats.Map.replace('de_', '').toUpperCase() : 'UNKNOWN';
-                score = round.round_stats.Score || '-';
-                
-                let foundPlayer = false;
-                for (const team of round.teams) {
-                    const p = team.players.find(player => player.player_id === player_id);
-                    if (p) {
-                        foundPlayer = true;
-                        kills = parseInt(p.player_stats.Kills) || 0;
-                        deaths = parseInt(p.player_stats.Deaths) || 0;
-                        kdRatio = p.player_stats['K/D Ratio'] || (deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2));
-                        
-                        const winFlag = p.player_stats.Result;
-                        result = winFlag === '1' ? 'W' : 'L';
+        state.detailedMatches.push(...parsedBatch);
+        state.matchOffset += items.length;
 
-                        // Run Deep Algorithmic Leaver Inspector
-                        const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats, match.results);
-                        if (leaverCheck.isLeaver) {
-                            isLeaverOrDnf = true;
-                            dnfReason = leaverCheck.reason;
-                        }
-                        break;
-                    }
-                }
+        if (items.length < limit) {
+            state.hasMoreMatches = false;
+            document.getElementById('load-more-container').style.display = 'none';
+        }
 
-                if (!foundPlayer) {
-                    isLeaverOrDnf = true;
-                    dnfReason = 'Player Left Match';
-                }
-            } else {
-                // If round details are unavailable, pull basic score from match results and mark as Completed
-                const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
-                const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
-                score = `${f1Score} - ${f2Score}`;
-                result = (match.results && match.results.winner === 'faction1') ? 'W' : 'L';
-                isLeaverOrDnf = false;
-                dnfReason = '';
-            }
-
-            return {
-                match_id: match.match_id,
-                timestamp: match.finished_at * 1000,
-                date,
-                time,
-                mapName,
-                rawMap: (details && details.rounds && details.rounds[0] && details.rounds[0].round_stats.Map) || 'de_unknown',
-                score,
-                result,
-                kills,
-                deaths,
-                kdRatio: parseFloat(kdRatio),
-                isLeaverOrDnf,
-                dnfReason,
-                rawDetails: details
-            };
-        });
-
-        state.detailedMatches = parsedMatches;
-        
-        // Render Overview & Full Matches
-        renderMatchHistoryTables(parsedMatches);
-        renderKdTrendChart(parsedMatches.slice(0, 20)); // Top 20 for trend chart
+        applyMatchFilters();
 
     } catch (err) {
-        console.error('Error fetching match history details:', err);
-        state.detailedMatches = [];
-        renderMatchHistoryTables([]);
+        console.error('Error loading more matches:', err);
+    } finally {
+        if (btn) btn.innerText = 'Load Older Historical Matches';
     }
+}
+
+// Parse Raw Match Array into Unified Match Objects
+function parseMatchBatch(batchDetailed, player_id) {
+    return batchDetailed.map(({ match, details }) => {
+        const dateObj = new Date(match.finished_at * 1000);
+        const date = dateObj.toLocaleDateString();
+        const time = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        let mapName = 'Unknown';
+        let score = '-';
+        let result = 'L';
+        let kills = 0;
+        let deaths = 0;
+        let kdRatio = '0.00';
+        let isLeaverOrDnf = false;
+        let dnfReason = '';
+
+        if (details && details.rounds && details.rounds.length > 0) {
+            const round = details.rounds[0];
+            mapName = round.round_stats.Map ? round.round_stats.Map.replace('de_', '').toUpperCase() : 'UNKNOWN';
+            score = round.round_stats.Score || '-';
+            
+            let foundPlayer = false;
+            for (const team of round.teams) {
+                const p = team.players.find(player => player.player_id === player_id);
+                if (p) {
+                    foundPlayer = true;
+                    kills = parseInt(p.player_stats.Kills) || 0;
+                    deaths = parseInt(p.player_stats.Deaths) || 0;
+                    kdRatio = p.player_stats['K/D Ratio'] || (deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2));
+                    
+                    const winFlag = p.player_stats.Result;
+                    result = winFlag === '1' ? 'W' : 'L';
+
+                    // Run Deep Algorithmic Leaver Inspector
+                    const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats, match.results);
+                    if (leaverCheck.isLeaver) {
+                        isLeaverOrDnf = true;
+                        dnfReason = leaverCheck.reason;
+                    }
+                    break;
+                }
+            }
+
+            if (!foundPlayer) {
+                isLeaverOrDnf = true;
+                dnfReason = 'Player Left Match';
+            }
+        } else {
+            // If round details are unavailable, pull basic score from match results and mark as Completed
+            const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
+            const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
+            score = `${f1Score} - ${f2Score}`;
+            result = (match.results && match.results.winner === 'faction1') ? 'W' : 'L';
+            isLeaverOrDnf = false;
+            dnfReason = '';
+        }
+
+        return {
+            match_id: match.match_id,
+            timestamp: match.finished_at * 1000,
+            date,
+            time,
+            mapName,
+            rawMap: (details && details.rounds && details.rounds[0] && details.rounds[0].round_stats.Map) || 'de_unknown',
+            score,
+            result,
+            kills,
+            deaths,
+            kdRatio: parseFloat(kdRatio),
+            isLeaverOrDnf,
+            dnfReason,
+            rawDetails: details
+        };
+    });
 }
 
 // Render Overview Quick Matches & Full Filterable Match History Table

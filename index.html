@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="styles.css?v=3.3.0">
+    <link rel="stylesheet" href="styles.css?v=3.4.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
 </head>
 <body>
@@ -62,11 +62,11 @@
                     </div>
                     <div class="hero-feature-pill">
                         <span class="hero-pill-icon">🛡️</span>
-                        <span>Algorithmic 30-Day Ban Predictor</span>
+                        <span>Complete 30-Day Ban Predictor Scan</span>
                     </div>
                     <div class="hero-feature-pill">
                         <span class="hero-pill-icon">📜</span>
-                        <span>50-Match Inspector & Filters</span>
+                        <span>Full Match History & Filters</span>
                     </div>
                 </div>
             </div>
@@ -101,7 +101,7 @@
             </button>
             <button class="nav-tab-btn" data-tab="tab-matches" onclick="switchTab('tab-matches')">
                 <svg class="nav-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Match History (50 Matches)
+                Match History
             </button>
             <button class="nav-tab-btn" data-tab="tab-penalties" onclick="switchTab('tab-penalties')">
                 <svg class="nav-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -189,7 +189,7 @@
                 <section class="card">
                     <div class="card-header space-between">
                         <h2>Recent Matches</h2>
-                        <button class="btn btn-secondary btn-sm" onclick="switchTab('tab-matches')">View 50 Matches</button>
+                        <button class="btn btn-secondary btn-sm" onclick="switchTab('tab-matches')">View Full History</button>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -221,7 +221,7 @@
                         <div class="prediction-alert highlight">
                             <span class="prediction-label">Next Infraction Ban Duration</span>
                             <span class="prediction-time" id="overview-next-cooldown">30 Minutes</span>
-                            <p class="prediction-desc">Based on active infractions detected in your rolling 30-day window.</p>
+                            <p class="prediction-desc">Based on 100% complete match scanning in your rolling 30-day window.</p>
                         </div>
                         <div class="spacer-y-sm">
                             <button class="btn btn-primary w-full" onclick="switchTab('tab-penalties')">Open Ban Predictor & Escalation Ladder</button>
@@ -340,7 +340,7 @@
         <div class="tab-content" id="tab-matches" style="display: none;">
             <section class="card spacer-y-md">
                 <div class="card-header space-between flex-wrap gap-sm">
-                    <h2>Match History (Last 50 Matches)</h2>
+                    <h2>Full Match History Log</h2>
                     <div class="filter-controls-row">
                         <!-- Map Filter Dropdown -->
                         <select id="filter-map" class="filter-select" onchange="applyMatchFilters()">
@@ -369,7 +369,7 @@
                 </div>
                 <div class="card-body">
                     <p class="description-text text-sm spacer-y-xs">
-                        💡 Click on any match row to view the full team rosters, player kills, deaths, K/D, and open the official FACEIT match room.
+                        💡 All matches in the rolling 30-day window are scanned for 100% accurate ban prediction. Click on any match row to view the full team rosters and FACEIT room link.
                     </p>
                     <div class="table-responsive">
                         <table class="data-table interactive-table">
@@ -390,6 +390,13 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <!-- Load More Historical Matches Button -->
+                    <div class="text-center spacer-y-md" id="load-more-container" style="display: none;">
+                        <button class="btn btn-secondary" id="load-more-btn" onclick="loadMoreMatches()">
+                            Load Older Historical Matches
+                        </button>
+                    </div>
                 </div>
             </section>
         </div>
@@ -408,7 +415,7 @@
                                 <span class="prediction-label">Next Infraction Ban Duration</span>
                                 <span class="prediction-time" id="next-cooldown-time">30 Minutes</span>
                                 <p class="prediction-desc">
-                                    Based on <strong id="active-infractions-count">0</strong> total infractions (official bans + algorithmically detected match abandonments) in your rolling 30-day window.
+                                    Based on <strong id="active-infractions-count">0</strong> total infractions (official bans + 100% complete 30-day match log scan).
                                 </p>
                             </div>
                             
@@ -567,6 +574,6 @@
         </div>
     </footer>
 
-    <script src="app.js?v=3.3.0"></script>
+    <script src="app.js?v=3.4.0"></script>
 </body>
 </html>
