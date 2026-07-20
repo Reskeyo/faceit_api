@@ -123,7 +123,7 @@ function handleSearchSubmit(event) {
     }
 }
 
-// Core Fetching Mechanism (Direct API calls to open.faceit.com)
+// Core Fetching Mechanism with Automatic Authorization Format Fallback
 async function faceitFetch(endpoint) {
     const apiKey = getApiKey();
     if (!apiKey) {
@@ -131,14 +131,32 @@ async function faceitFetch(endpoint) {
     }
 
     const targetUrl = `https://open.faceit.com/data/v4/${endpoint}`;
+    
+    // Attempt 1: Standard Bearer Token format
+    let authHeader = apiKey.trim();
+    if (!authHeader.toLowerCase().startsWith('bearer ')) {
+        authHeader = `Bearer ${authHeader}`;
+    }
 
-    const response = await fetch(targetUrl, {
+    let response = await fetch(targetUrl, {
         method: 'GET',
         headers: {
-            'Authorization': `Bearer ${apiKey}`,
+            'Authorization': authHeader,
             'Accept': 'application/json'
         }
     });
+
+    // Attempt 2: If 401 Unauthorized, retry with raw token (some FACEIT key types require raw string without 'Bearer ')
+    if (response.status === 401 && authHeader.toLowerCase().startsWith('bearer ')) {
+        const rawKey = apiKey.trim().replace(/^bearer\s+/i, '');
+        response = await fetch(targetUrl, {
+            method: 'GET',
+            headers: {
+                'Authorization': rawKey,
+                'Accept': 'application/json'
+            }
+        });
+    }
 
     if (!response.ok) {
         if (response.status === 401) {
