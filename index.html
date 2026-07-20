@@ -10,7 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" href="styles.css?v=3.0.0">
+    <link rel="stylesheet" href="styles.css?v=3.1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
 </head>
 <body>
@@ -20,7 +20,7 @@
         <div class="container header-container">
             <div class="logo">
                 <span class="logo-faceit-icon">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="#FF5500"><path d="M22.5 3H1.5L8.5 13.5L1.5 21H22.5L15.5 13.5L22.5 3Z"/></svg>
+                    <svg viewBox="0 0 24 24" width="26" height="26" fill="#FF5500"><path d="M22.5 3H1.5L8.5 13.5L1.5 21H22.5L15.5 13.5L22.5 3Z"/></svg>
                 </span>
                 <span class="logo-main">FACEIT <span class="logo-accent">CS2 UTILITY</span></span>
             </div>
@@ -32,13 +32,13 @@
     </header>
 
     <main class="container">
-        <!-- Search & Lookup Section -->
+        <!-- Search & Lookup Section (Starts completely empty) -->
         <section class="search-section spacer-y-md">
             <div class="search-card card">
                 <div class="card-body">
                     <form id="search-form" onsubmit="handleSearchSubmit(event)">
                         <div class="search-bar-row">
-                            <input type="text" id="nickname-search" placeholder="Enter FACEIT Nickname (e.g. s1mple)" required>
+                            <input type="text" id="nickname-search" placeholder="Enter FACEIT Nickname (e.g. s1mple)" required autocomplete="off">
                             <button type="submit" class="btn btn-primary search-btn" id="search-submit-btn">
                                 <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <circle cx="11" cy="11" r="8"/>
@@ -81,7 +81,7 @@
             </button>
             <button class="nav-tab-btn" data-tab="tab-matches" onclick="switchTab('tab-matches')">
                 <svg class="nav-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                Match History
+                Match History (50 Matches)
             </button>
             <button class="nav-tab-btn" data-tab="tab-penalties" onclick="switchTab('tab-penalties')">
                 <svg class="nav-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -118,7 +118,12 @@
                             </div>
                         </div>
                         <div class="level-showcase">
-                            <div class="level-badge lvl-1" id="level-badge-value">1</div>
+                            <!-- Dynamic Authentic FACEIT Level Badge Container -->
+                            <div id="faceit-level-badge-container">
+                                <div class="faceit-badge lvl-1" id="level-badge-value">
+                                    <span class="badge-num">1</span>
+                                </div>
+                            </div>
                             <div class="level-meta">
                                 <span class="label">FACEIT Elo</span>
                                 <span class="value" id="elo-value">1000</span>
@@ -163,8 +168,8 @@
             <div class="dashboard-grid spacer-y-md">
                 <section class="card">
                     <div class="card-header space-between">
-                        <h2>Recent Performance</h2>
-                        <button class="btn btn-secondary btn-sm" onclick="switchTab('tab-matches')">View Full History</button>
+                        <h2>Recent Matches</h2>
+                        <button class="btn btn-secondary btn-sm" onclick="switchTab('tab-matches')">View 50 Matches</button>
                     </div>
                     <div class="card-body">
                         <div class="table-responsive">
@@ -176,10 +181,11 @@
                                         <th>Score</th>
                                         <th>Result</th>
                                         <th>K/D Ratio</th>
+                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="overview-matches-list">
-                                    <tr><td colspan="5" class="text-center muted">Loading matches...</td></tr>
+                                    <tr><td colspan="6" class="text-center muted">Search a player to view matches.</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -302,7 +308,7 @@
                                 </tr>
                             </thead>
                             <tbody id="map-stats-rows">
-                                <tr><td colspan="6" class="text-center muted">Loading map statistics...</td></tr>
+                                <tr><td colspan="6" class="text-center muted">Search a player to view map statistics.</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -314,7 +320,7 @@
         <div class="tab-content" id="tab-matches" style="display: none;">
             <section class="card spacer-y-md">
                 <div class="card-header space-between flex-wrap gap-sm">
-                    <h2>Match History & Filters</h2>
+                    <h2>Match History (Last 50 Matches)</h2>
                     <div class="filter-controls-row">
                         <!-- Map Filter Dropdown -->
                         <select id="filter-map" class="filter-select" onchange="applyMatchFilters()">
@@ -342,8 +348,11 @@
                     </div>
                 </div>
                 <div class="card-body">
+                    <p class="description-text text-sm spacer-y-xs">
+                        💡 Click on any match row to view the full team roster, player kills, deaths, K/D, and open the official FACEIT match room.
+                    </p>
                     <div class="table-responsive">
-                        <table class="data-table">
+                        <table class="data-table interactive-table">
                             <thead>
                                 <tr>
                                     <th>Date & Time</th>
@@ -353,10 +362,11 @@
                                     <th>Kills / Deaths</th>
                                     <th>K/D Ratio</th>
                                     <th>Status / Infraction</th>
+                                    <th>Details</th>
                                 </tr>
                             </thead>
                             <tbody id="matches-list-full">
-                                <tr><td colspan="7" class="text-center muted">No matches loaded yet.</td></tr>
+                                <tr><td colspan="8" class="text-center muted">No matches loaded yet. Enter a player name above to search!</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -423,7 +433,7 @@
                 </div>
             </div>
 
-            <!-- Official Player Ban History -->
+            <!-- Official Player Ban History & Detected Infractions -->
             <section class="card history-card spacer-y-lg">
                 <div class="card-header space-between">
                     <h2>Official FACEIT Ban History & Detected Infractions</h2>
@@ -442,7 +452,7 @@
                             </thead>
                             <tbody id="ban-log-rows">
                                 <tr>
-                                    <td colspan="4" class="text-center muted">No ban history found for this player. Clean record!</td>
+                                    <td colspan="4" class="text-center muted">No ban history or detected infractions found. Clean record!</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -504,6 +514,32 @@
         </div>
     </main>
 
+    <!-- Detailed Match Inspection Modal -->
+    <div class="modal-backdrop" id="match-modal" style="display: none;" onclick="closeMatchModal(event)">
+        <div class="modal-dialog card" onclick="event.stopPropagation()">
+            <div class="card-header space-between">
+                <div class="modal-title-box">
+                    <h2 id="modal-match-map">Match Details</h2>
+                    <span class="muted text-sm" id="modal-match-date">Date & Time</span>
+                </div>
+                <button class="modal-close-btn" onclick="closeMatchModal()">✕</button>
+            </div>
+            <div class="card-body" id="modal-match-body">
+                <div class="loading-container text-center">
+                    <div class="spinner"></div>
+                    <p>Loading full match rosters...</p>
+                </div>
+            </div>
+            <div class="card-footer space-between">
+                <a id="modal-faceit-link" href="#" target="_blank" class="btn btn-primary btn-sm">
+                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                    Open Room on FACEIT.com
+                </a>
+                <button class="btn btn-secondary btn-sm" onclick="closeMatchModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
     <footer class="app-footer">
         <div class="container footer-container">
             <p>Built for CS2 players. Not affiliated with FACEIT.</p>
@@ -511,6 +547,6 @@
         </div>
     </footer>
 
-    <script src="app.js?v=3.0.0"></script>
+    <script src="app.js?v=3.1.0"></script>
 </body>
 </html>

@@ -37,17 +37,11 @@ const INFRACTION_ESCALATION = [
     { label: "8+ Infractions", durationText: "1 Week (7 Days)", durationMs: 7 * 24 * 60 * 60 * 1000 }
 ];
 
-// Initialize Application
+// Initialize Application (Search box starts completely EMPTY)
 window.addEventListener('DOMContentLoaded', () => {
-    loadFromLocalStorage();
     checkApiKeySetup();
-    
-    if (state.nickname) {
-        document.getElementById('nickname-search').value = state.nickname;
-        if (checkApiKeySetup()) {
-            fetchStats();
-        }
-    }
+    // Intentionally keep search input empty on page load
+    document.getElementById('nickname-search').value = '';
 });
 
 // Tab Switching Mechanism
@@ -119,23 +113,8 @@ function saveUserApiKey() {
     localStorage.setItem('faceit_worker_url_v1', val);
     const configured = checkApiKeySetup();
     if (configured) {
-        if (state.nickname) {
-            fetchStats();
-        } else {
-            alert('Worker URL saved! Enter your FACEIT Nickname above and click Search Player.');
-        }
+        alert('Worker URL saved! Enter a FACEIT Nickname above and click Search Player.');
     }
-}
-
-// Load state from localStorage
-function loadFromLocalStorage() {
-    const savedNickname = localStorage.getItem('faceit_nickname_v3');
-    if (savedNickname) state.nickname = savedNickname;
-}
-
-// Save state to localStorage
-function saveState(key, data) {
-    localStorage.setItem(key, data);
 }
 
 // Handle nickname search submit
@@ -145,7 +124,6 @@ function handleSearchSubmit(event) {
     if (!query) return;
 
     state.nickname = query;
-    saveState('faceit_nickname_v3', state.nickname);
     
     if (checkApiKeySetup()) {
         fetchStats();
@@ -177,6 +155,21 @@ async function faceitFetch(endpoint) {
     }
 
     return response.json();
+}
+
+// Robust Stat Value Helper (Searches case-insensitively for key aliases)
+function getStat(statsObj, aliases, defaultValue = '-') {
+    if (!statsObj) return defaultValue;
+    const keys = Object.keys(statsObj);
+    for (const alias of aliases) {
+        const target = alias.toLowerCase();
+        const matchedKey = keys.find(k => k.toLowerCase() === target);
+        if (matchedKey && statsObj[matchedKey] !== undefined && statsObj[matchedKey] !== null) {
+            let val = String(statsObj[matchedKey]).trim();
+            if (val.length > 0) return val;
+        }
+    }
+    return defaultValue;
 }
 
 // Main Fetch Statistics Function
@@ -222,18 +215,22 @@ async function fetchStats() {
 
         if (cs2Stats && cs2Stats.lifetime) {
             const lifetime = cs2Stats.lifetime;
-            const matches = lifetime.Matches || '0';
-            const winRate = lifetime['Win Rate %'] ? `${lifetime['Win Rate %']}%` : '0%';
-            const kd = lifetime['Average K/D Ratio'] || '0.00';
-            const streak = lifetime['Current Win Streak'] || '0';
-            const hsPct = lifetime['Average Headshots %'] ? `${lifetime['Average Headshots %']}%` : '0%';
-            const totalKills = lifetime['Total Kills'] || '-';
-            const kr = lifetime['Average K/R Ratio'] || '-';
-            const longestStreak = lifetime['Longest Win Streak'] || '-';
             
-            const k3 = lifetime['Triple Kills'] || '0';
-            const k4 = lifetime['Quadro Kills'] || '0';
-            const k5 = lifetime['Penta Kills'] || lifetime['Aces'] || '0';
+            const matches = getStat(lifetime, ['Matches', 'Matches Played', 'Total Matches']);
+            const winRateRaw = getStat(lifetime, ['Win Rate %', 'Win Rate', 'Winrate %']);
+            const winRate = winRateRaw !== '-' ? (winRateRaw.includes('%') ? winRateRaw : `${winRateRaw}%`) : '-';
+            const kd = getStat(lifetime, ['Average K/D Ratio', 'K/D Ratio', 'KD Ratio']);
+            const streak = getStat(lifetime, ['Current Win Streak', 'Win Streak', 'Streak'], '0');
+            const hsPctRaw = getStat(lifetime, ['Average Headshots %', 'Headshots %', 'Headshot %']);
+            const hsPct = hsPctRaw !== '-' ? (hsPctRaw.includes('%') ? hsPctRaw : `${hsPctRaw}%`) : '-';
+            
+            const totalKills = getStat(lifetime, ['Total Kills', 'Kills']);
+            const kr = getStat(lifetime, ['Average K/R Ratio', 'K/R Ratio', 'KR Ratio']);
+            const longestStreak = getStat(lifetime, ['Longest Win Streak', 'Max Win Streak']);
+            
+            const k3 = getStat(lifetime, ['Triple Kills', '3K', '3 Kills'], '0');
+            const k4 = getStat(lifetime, ['Quadro Kills', '4K', '4 Kills'], '0');
+            const k5 = getStat(lifetime, ['Penta Kills', 'Aces', '5K', '5 Kills'], '0');
 
             document.getElementById('stat-matches').innerText = matches;
             document.getElementById('stat-winrate').innerText = winRate;
@@ -269,10 +266,10 @@ async function fetchStats() {
             }
         }
 
-        // Step 3: Fetch Recent Matches (Limit 20 for deep history analysis)
+        // Step 3: Fetch Recent Matches (Up to 50 Matches for deep history & accurate Leaver detection)
         await fetchMatchHistory(player_id);
 
-        // Step 4: Fetch Bans & Run Enhanced Infraction Detector
+        // Step 4: Fetch Bans & Run Combined Infraction Detector
         await fetchPlayerBans(player_id);
 
         // Hide Global Loader & Show Active Tab
@@ -287,10 +284,52 @@ async function fetchStats() {
     }
 }
 
-// Fetch Detailed Match History (20 Matches)
+// Deep Inspector: Scans all attributes in player_stats for Leaver/AFK/DNF flags
+function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
+    if (!pStats) return { isLeaver: true, reason: 'No Player Stats Recorded' };
+
+    // Check direct known properties
+    if (pStats.Leaver === '1' || pStats.leaver === '1' || pStats.Leaver === 'true') {
+        return { isLeaver: true, reason: 'Flagged as Leaver' };
+    }
+    if (pStats.AFK === '1' || pStats.afk === '1' || pStats.AFK === 'true') {
+        return { isLeaver: true, reason: 'Flagged as AFK' };
+    }
+    if (pStats.DNFFlag === '1' || pStats.dnf === '1' || pStats.Status === 'DNF') {
+        return { isLeaver: true, reason: 'Did Not Finish (DNF)' };
+    }
+
+    // Inspect ALL key-value pairs in player_stats case-insensitively
+    for (const [key, val] of Object.entries(pStats)) {
+        const kLow = key.toLowerCase();
+        const vLow = String(val).toLowerCase();
+        
+        if (kLow.includes('leaver') || kLow.includes('afk') || kLow.includes('noshow') || kLow.includes('dnf') || kLow.includes('abandon')) {
+            if (vLow === '1' || vLow === 'true' || vLow.includes('yes') || vLow.includes('leaver') || vLow.includes('afk')) {
+                return { isLeaver: true, reason: `Match Flag: ${key}` };
+            }
+        }
+        if (vLow.includes('leaver') || vLow.includes('afk') || vLow.includes('noshow') || vLow.includes('abandoned')) {
+            return { isLeaver: true, reason: `Status: ${val}` };
+        }
+    }
+
+    // Check zero stats in a full match (> 5 rounds)
+    const kills = parseInt(pStats.Kills) || 0;
+    const deaths = parseInt(pStats.Deaths) || 0;
+    const totalRounds = roundStats ? (parseInt(roundStats.Rounds) || 16) : 16;
+
+    if (kills === 0 && deaths === 0 && totalRounds > 5) {
+        return { isLeaver: true, reason: 'Zero Activity / Disconnect' };
+    }
+
+    return { isLeaver: false, reason: '' };
+}
+
+// Fetch Detailed Match History (50 Matches)
 async function fetchMatchHistory(player_id) {
     try {
-        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=20`);
+        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=50`);
         const matches = historyData.items || [];
 
         if (matches.length === 0) {
@@ -341,21 +380,20 @@ async function fetchMatchHistory(player_id) {
                         
                         const winFlag = p.player_stats.Result;
                         result = winFlag === '1' ? 'W' : 'L';
-                        
-                        // Check for DNF or Leaver markers in player match stats
-                        if (p.player_stats.DNFFlag === '1' || p.player_stats.Leaver === '1' || p.player_stats.Status === 'DNF') {
+
+                        // Run Deep Leaver Inspector on player stats
+                        const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats, match.results);
+                        if (leaverCheck.isLeaver) {
                             isLeaverOrDnf = true;
-                            dnfReason = 'Leaver / Abandoned';
+                            dnfReason = leaverCheck.reason;
                         }
                         break;
                     }
                 }
 
-                // If player was not found in round stats or had 0 stats in a full match
-                const totalRounds = parseInt(round.round_stats.Rounds) || 16;
-                if (!foundPlayer || (kills === 0 && deaths === 0 && totalRounds > 5)) {
+                if (!foundPlayer) {
                     isLeaverOrDnf = true;
-                    dnfReason = 'Disconnected / DNF';
+                    dnfReason = 'Player Left Match';
                 }
             } else {
                 const f1Score = match.results ? match.results.score.faction1 : 0;
@@ -379,7 +417,8 @@ async function fetchMatchHistory(player_id) {
                 deaths,
                 kdRatio: parseFloat(kdRatio),
                 isLeaverOrDnf,
-                dnfReason
+                dnfReason,
+                rawDetails: details
             };
         });
 
@@ -387,7 +426,7 @@ async function fetchMatchHistory(player_id) {
         
         // Render Overview & Full Matches
         renderMatchHistoryTables(parsedMatches);
-        renderKdTrendChart(parsedMatches);
+        renderKdTrendChart(parsedMatches.slice(0, 20)); // Top 20 for trend chart
 
     } catch (err) {
         console.error('Error fetching match history details:', err);
@@ -404,16 +443,19 @@ function renderMatchHistoryTables(matches) {
 
     const top5 = matches.slice(0, 5);
     if (top5.length === 0) {
-        overviewList.innerHTML = `<tr><td colspan="5" class="text-center muted">No matches available.</td></tr>`;
+        overviewList.innerHTML = `<tr><td colspan="6" class="text-center muted">No matches available.</td></tr>`;
     } else {
         top5.forEach(m => {
             const row = document.createElement('tr');
+            row.onclick = () => openMatchModal(m.match_id);
+            row.title = "Click to inspect match details";
             row.innerHTML = `
                 <td>${m.date}</td>
                 <td><span class="map-badge">${m.mapName}</span></td>
                 <td>${m.score}</td>
                 <td><span class="result-badge ${m.result === 'W' ? 'win' : 'loss'}">${m.result === 'W' ? 'WIN' : 'LOSS'}</span></td>
                 <td class="font-mono ${m.kdRatio >= 1.0 ? 'text-green' : 'text-red'}">${m.kdRatio.toFixed(2)}</td>
+                <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openMatchModal('${m.match_id}')">Inspect</button></td>
             `;
             overviewList.appendChild(row);
         });
@@ -446,12 +488,14 @@ function applyMatchFilters() {
     });
 
     if (filtered.length === 0) {
-        fullList.innerHTML = `<tr><td colspan="7" class="text-center muted">No matches match the selected filters.</td></tr>`;
+        fullList.innerHTML = `<tr><td colspan="8" class="text-center muted">No matches match the selected filters.</td></tr>`;
         return;
     }
 
     filtered.forEach(m => {
         const row = document.createElement('tr');
+        row.onclick = () => openMatchModal(m.match_id);
+        row.title = "Click to inspect match details";
         
         let statusHtml = '<span class="badge grey">Completed</span>';
         if (m.isLeaverOrDnf) {
@@ -466,6 +510,7 @@ function applyMatchFilters() {
             <td>${m.kills} <span class="muted">/</span> ${m.deaths}</td>
             <td class="font-mono ${m.kdRatio >= 1.0 ? 'text-green' : 'text-red'}">${m.kdRatio.toFixed(2)}</td>
             <td>${statusHtml}</td>
+            <td><button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); openMatchModal('${m.match_id}')">Inspect</button></td>
         `;
         fullList.appendChild(row);
     });
@@ -515,7 +560,114 @@ function renderMapStatsTable(segments) {
     });
 }
 
-// Fetch Player Ban History & Run Enhanced 30-Day Infraction Detector
+// Open Detailed Match Inspection Modal
+async function openMatchModal(match_id) {
+    const modal = document.getElementById('match-modal');
+    const body = document.getElementById('modal-match-body');
+    const faceitLink = document.getElementById('modal-faceit-link');
+    
+    modal.style.display = 'flex';
+    faceitLink.href = `https://www.faceit.com/en/cs2/room/${match_id}`;
+    
+    body.innerHTML = `
+        <div class="loading-container text-center spacer-y-md">
+            <div class="spinner"></div>
+            <p>Fetching team rosters and player stats...</p>
+        </div>
+    `;
+
+    const matchObj = state.detailedMatches.find(m => m.match_id === match_id);
+    if (matchObj) {
+        document.getElementById('modal-match-map').innerText = `${matchObj.mapName} (${matchObj.score})`;
+        document.getElementById('modal-match-date').innerText = `${matchObj.date} at ${matchObj.time}`;
+    }
+
+    try {
+        let details = matchObj ? matchObj.rawDetails : null;
+        if (!details) {
+            details = await faceitFetch(`matches/${match_id}/stats`);
+        }
+
+        if (!details || !details.rounds || details.rounds.length === 0) {
+            body.innerHTML = `<p class="text-center text-red">Failed to load detailed round statistics for this match.</p>`;
+            return;
+        }
+
+        const round = details.rounds[0];
+        let html = '';
+
+        round.teams.forEach(team => {
+            const teamName = team.team_stats.Team || 'Team';
+            const winFlag = team.team_stats['Second Half Score'] !== undefined ? (team.team_stats.TeamWin === '1' ? 'WINNER' : '') : '';
+
+            html += `
+                <div class="team-roster-section">
+                    <div class="team-header-title">
+                        <span>${teamName}</span>
+                        ${winFlag ? `<span class="result-badge win">${winFlag}</span>` : ''}
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th>Kills</th>
+                                    <th>Deaths</th>
+                                    <th>Headshots %</th>
+                                    <th>K/D Ratio</th>
+                                    <th>K/R Ratio</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+            `;
+
+            team.players.forEach(p => {
+                const name = p.nickname;
+                const kills = p.player_stats.Kills || '0';
+                const deaths = p.player_stats.Deaths || '0';
+                const hs = p.player_stats['Headshots %'] ? `${p.player_stats['Headshots %']}%` : '0%';
+                const kd = p.player_stats['K/D Ratio'] || '0.00';
+                const kr = p.player_stats['K/R Ratio'] || '0.00';
+                
+                const isTargetPlayer = state.player && p.player_id === state.player.player_id;
+
+                html += `
+                    <tr ${isTargetPlayer ? 'style="background: rgba(255,85,0,0.15); font-weight: bold;"' : ''}>
+                        <td><strong>${name}</strong> ${isTargetPlayer ? '(Searched Player)' : ''}</td>
+                        <td>${kills}</td>
+                        <td>${deaths}</td>
+                        <td>${hs}</td>
+                        <td class="font-mono ${parseFloat(kd) >= 1.0 ? 'text-green' : 'text-red'}">${kd}</td>
+                        <td class="font-mono">${kr}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        });
+
+        body.innerHTML = html;
+
+    } catch (err) {
+        console.error('Error fetching modal details:', err);
+        body.innerHTML = `<p class="text-center text-red">Error loading match details: ${err.message}</p>`;
+    }
+}
+
+// Close Match Modal
+function closeMatchModal(event) {
+    if (event && event.target !== document.getElementById('match-modal') && !event.target.classList.contains('modal-close-btn')) {
+        return;
+    }
+    document.getElementById('match-modal').style.display = 'none';
+}
+
+// Fetch Player Ban History & Run Combined Infraction Detector
 async function fetchPlayerBans(player_id) {
     let bans = [];
     try {
@@ -819,9 +971,12 @@ function buildEscalationLadder(activeCount) {
     });
 }
 
-// Update level badge visual color class
+// Update level badge with authentic FACEIT shield badge styling
 function updateLevelBadge(level) {
-    const badge = document.getElementById('level-badge-value');
-    badge.innerText = level;
-    badge.className = `level-badge lvl-${level}`;
+    const container = document.getElementById('faceit-level-badge-container');
+    container.innerHTML = `
+        <div class="faceit-badge lvl-${level}">
+            <span class="badge-num">${level}</span>
+        </div>
+    `;
 }
