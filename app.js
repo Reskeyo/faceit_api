@@ -286,7 +286,7 @@ async function fetchStats() {
 
 // Algorithmic Leaver / Disconnect Inspector
 function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
-    if (!pStats) return { isLeaver: true, reason: 'No Player Stats Recorded' };
+    if (!pStats) return { isLeaver: false, reason: '' };
 
     // Check direct known properties
     if (pStats.Leaver === '1' || pStats.leaver === '1' || pStats.Leaver === 'true') {
@@ -314,7 +314,7 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
         }
     }
 
-    // Check zero stats or abnormal disconnect performance in full match
+    // Check zero stats in a full match (> 5 rounds) where team played but player did not connect
     const kills = parseInt(pStats.Kills) || 0;
     const deaths = parseInt(pStats.Deaths) || 0;
     const krRatio = parseFloat(pStats['K/R Ratio']) || 0;
@@ -325,7 +325,7 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
         return { isLeaver: true, reason: 'Warmup Disconnect / DNF' };
     }
 
-    // Algorithmic check for matches where player missed half the rounds (e.g. K/R < 0.38 AND ADR < 45 on a 19+ round match)
+    // Check for matches where player disconnected early (e.g. K/R < 0.38 AND ADR < 45 on a 18+ round match with low deaths)
     if (totalRounds >= 18 && krRatio > 0 && krRatio < 0.38 && adr < 45.0 && deaths < (totalRounds - 2)) {
         return { isLeaver: true, reason: 'Early Disconnect / Abandoned' };
     }
@@ -403,12 +403,13 @@ async function fetchMatchHistory(player_id) {
                     dnfReason = 'Player Left Match';
                 }
             } else {
-                const f1Score = match.results ? match.results.score.faction1 : 0;
-                const f2Score = match.results ? match.results.score.faction2 : 0;
+                // If round details are unavailable, pull basic score from match results and mark as Completed
+                const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
+                const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
                 score = `${f1Score} - ${f2Score}`;
-                result = 'L';
-                isLeaverOrDnf = true;
-                dnfReason = 'Match Abandoned';
+                result = (match.results && match.results.winner === 'faction1') ? 'W' : 'L';
+                isLeaverOrDnf = false;
+                dnfReason = '';
             }
 
             return {
