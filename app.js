@@ -333,47 +333,47 @@ async function fetchStats() {
     }
 }
 
-// Precise Algorithmic Leaver Inspector
-function checkPlayerLeaverStatus(pStats, roundStats) {
+// Precise Leaver/Abandon Detector
+// 
+// IMPORTANT - FACEIT API Limitations (verified July 2026):
+// 1. The /players/{id}/bans endpoint ONLY returns CURRENTLY ACTIVE bans - not historical ones.
+// 2. There is NO leaver/AFK/DNF flag in the player_stats object from /matches/{id}/stats.
+// 3. The ONLY reliable signal for an abandon is: kills === 0 AND deaths === 0 in a match
+//    where the game actually played out (roundCount > 5). This means the player never
+//    connected to the game server at all (warmup leaver / failed to join).
+// 4. We deliberately do NOT use heuristics like low KR/ADR - those are just bad performance,
+//    not evidence of abandoning.
+function checkPlayerLeaverStatus(pStats, roundStats, playerFoundInStats) {
     if (!pStats) return { isLeaver: false, reason: '' };
 
-    // Check explicit leaver/AFK properties
-    if (pStats.Leaver === '1' || pStats.leaver === '1' || pStats.Leaver === 'true') {
-        return { isLeaver: true, reason: 'Flagged as Leaver' };
+    // Check if FACEIT ever adds explicit leaver flags (future-proofing)
+    const explicitLeaverKeys = ['Leaver', 'leaver', 'AFK', 'afk', 'DNFFlag', 'dnf'];
+    for (const key of explicitLeaverKeys) {
+        const val = pStats[key];
+        if (val === '1' || val === 'true' || val === true || val === 1) {
+            return { isLeaver: true, reason: 'Flagged as Leaver/AFK by FACEIT' };
+        }
     }
-    if (pStats.AFK === '1' || pStats.afk === '1' || pStats.AFK === 'true') {
-        return { isLeaver: true, reason: 'Flagged as AFK / Warmup Disconnect' };
-    }
-    if (pStats.DNFFlag === '1' || pStats.dnf === '1' || pStats.Status === 'DNF') {
-        return { isLeaver: true, reason: 'Did Not Finish (DNF)' };
-    }
-
-    // Inspect key-value pairs case-insensitively
+    // Generic scan for any leaver-like key
     for (const [key, val] of Object.entries(pStats)) {
         const kLow = key.toLowerCase();
         const vLow = String(val).toLowerCase();
-        
-        if (kLow.includes('leaver') || kLow.includes('afk') || kLow.includes('noshow') || kLow.includes('dnf')) {
-            if (vLow === '1' || vLow === 'true' || vLow.includes('yes') || vLow.includes('leaver') || vLow.includes('afk')) {
-                return { isLeaver: true, reason: `Match Flag: ${key}` };
-            }
+        if ((kLow.includes('leaver') || kLow.includes('noshow')) &&
+            (vLow === '1' || vLow === 'true')) {
+            return { isLeaver: true, reason: `Match Flag: ${key}` };
         }
     }
 
-    // Check for matches with zero stats in a full match (> 5 rounds) where player failed to connect
+    // The only reliable signal: 0 kills AND 0 deaths in a game that was played out
+    // This means the player never connected to the game server (warmup abandon / failed join)
     const kills = parseInt(pStats.Kills) || 0;
     const deaths = parseInt(pStats.Deaths) || 0;
-    const krRatio = parseFloat(pStats['K/R Ratio']) || 0;
-    const adr = parseFloat(pStats.ADR) || 0;
-    const totalRounds = roundStats ? (parseInt(roundStats.Rounds) || 16) : 16;
+    const totalRounds = roundStats ? (parseInt(roundStats.Rounds) || 0) : 0;
 
-    if (kills === 0 && deaths === 0 && totalRounds > 5) {
-        return { isLeaver: true, reason: 'Warmup Disconnect / DNF' };
-    }
-
-    // Check for matches where player disconnected early (e.g. K/R < 0.38 AND ADR < 45 on a 18+ round match)
-    if (totalRounds >= 18 && krRatio > 0 && krRatio < 0.38 && adr < 45.0 && deaths < (totalRounds - 2)) {
-        return { isLeaver: true, reason: 'Early Disconnect / Abandoned' };
+    // Only flag if: player was found in the roster but has literally 0 kills AND 0 deaths
+    // AND the match actually played more than 5 rounds (not a cancelled/short match)
+    if (playerFoundInStats && kills === 0 && deaths === 0 && totalRounds > 5) {
+        return { isLeaver: true, reason: 'Did Not Connect (Warmup Abandon)' };
     }
 
     return { isLeaver: false, reason: '' };
@@ -497,13 +497,13 @@ function parseMatchBatch(batchDetailed, player_id) {
                     foundPlayer = true;
                     kills = parseInt(p.player_stats.Kills) || 0;
                     deaths = parseInt(p.player_stats.Deaths) || 0;
-                    kdRatio = p.player_stats['K/D Ratio'] || (deaths > 0 ? (kills / deaths).toFixed(2) : kills.toFixed(2));
+                    kdRatio = p.player_stats['K/D Ratio'] || (deaths > 0 ? (kills / deaths).toFixed(2) : (kills > 0 ? kills.toString() : '0.00'));
                     
                     const winFlag = p.player_stats.Result;
                     result = winFlag === '1' ? 'W' : 'L';
 
-                    // Run Precise Algorithmic Leaver Inspector
-                    const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats);
+                    // Check leaver status — pass foundPlayer=true to enable the 0/0 check
+                    const leaverCheck = checkPlayerLeaverStatus(p.player_stats, round.round_stats, true);
                     if (leaverCheck.isLeaver) {
                         isLeaverOrDnf = true;
                         dnfReason = leaverCheck.reason;
@@ -512,8 +512,11 @@ function parseMatchBatch(batchDetailed, player_id) {
                 }
             }
 
+            // Player not found in this match's stats roster — don't flag as leaver
+            // (could be a data issue with the API)
             if (!foundPlayer) {
                 isLeaverOrDnf = false;
+                dnfReason = '';
             }
         } else {
             const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
@@ -844,34 +847,43 @@ async function fetchPlayerBans(player_id) {
 }
 
 // Render Consecutive 30-Day Escalation Chain Predictor
+//
+// API Limitation Note: FACEIT's /players/{id}/bans endpoint only returns CURRENTLY ACTIVE bans.
+// Historical bans (expired) are not available via the public API.
+// We detect abandons by finding matches with 0 kills AND 0 deaths (warmup abandons only).
+// This means our count is a MINIMUM estimate — expired bans are invisible to us.
 function renderBansAndPredictor(officialBans) {
     const now = Date.now();
     const cutoff30Days = now - ROLLING_WINDOW_MS;
 
+    // Build a combined list: currently active official bans + detected warmup abandons from match history
     const allInfractions = [];
 
     officialBans.forEach(b => {
         allInfractions.push({
-            timestamp: parseTimestamp(b.starts_at || b.created_at),
+            timestamp: parseTimestamp(b.starts_at || b.created_at || b.start),
             reason: b.reason || b.type || 'Platform Ban',
-            endMs: parseTimestamp(b.ends_at),
+            endMs: parseTimestamp(b.ends_at || b.end),
             isOfficial: true
         });
     });
 
+    // Only use confirmed warmup-abandon matches (0 kills AND 0 deaths = player never connected)
     state.detailedMatches.forEach(m => {
         if (m.isLeaverOrDnf) {
             allInfractions.push({
                 timestamp: m.timestamp,
-                reason: `${m.dnfReason} on ${m.mapName} (${m.score})`,
-                endMs: m.timestamp + (30 * 60 * 1000),
-                isOfficial: false
+                reason: `${m.dnfReason} — ${m.mapName} (${m.date})`,
+                endMs: 0, // we don't know when the resulting ban ended
+                isOfficial: false,
+                matchId: m.match_id
             });
         }
     });
 
     allInfractions.sort((a, b) => a.timestamp - b.timestamp);
 
+    // Count how many infractions fall within a rolling 30-day window ending at the most recent one
     let activeInfractionsCount = 0;
     let lastInfractionTime = 0;
 
@@ -879,19 +891,22 @@ function renderBansAndPredictor(officialBans) {
         if (lastInfractionTime === 0 || (item.timestamp - lastInfractionTime) <= ROLLING_WINDOW_MS) {
             activeInfractionsCount++;
         } else {
+            // Gap > 30 days resets the counter
             activeInfractionsCount = 1;
         }
         lastInfractionTime = item.timestamp;
     });
 
+    // If the most recent infraction is older than 30 days, all have expired
     if (lastInfractionTime > 0 && (now - lastInfractionTime) > ROLLING_WINDOW_MS) {
         activeInfractionsCount = 0;
     }
 
     const active30DayInfractions = allInfractions.filter(i => i.timestamp >= cutoff30Days);
+    const detectedAbandons = state.detailedMatches.filter(m => m.isLeaverOrDnf).length;
 
-    document.getElementById('active-infractions-count').innerText = activeInfractionsCount;
-    document.getElementById('overview-infraction-badge').innerText = `${activeInfractionsCount} Active Tier`;
+    document.getElementById('active-infractions-count').innerText = detectedAbandons;
+    document.getElementById('overview-infraction-badge').innerText = `${detectedAbandons} Detected`;
 
     const nextIndex = Math.min(activeInfractionsCount, INFRACTION_ESCALATION.length - 1);
     const nextCooldownObj = INFRACTION_ESCALATION[nextIndex];
@@ -901,11 +916,12 @@ function renderBansAndPredictor(officialBans) {
 
     buildEscalationLadder(activeInfractionsCount);
 
+    // Check for a currently active ban (official API)
     let currentActiveBan = null;
     officialBans.forEach(b => {
-        const endMs = parseTimestamp(b.ends_at);
+        const endMs = parseTimestamp(b.ends_at || b.end);
         if (endMs > now) {
-            if (!currentActiveBan || endMs > parseTimestamp(currentActiveBan.ends_at)) {
+            if (!currentActiveBan || endMs > parseTimestamp(currentActiveBan.ends_at || currentActiveBan.end)) {
                 currentActiveBan = b;
             }
         }
@@ -918,11 +934,11 @@ function renderBansAndPredictor(officialBans) {
         document.getElementById('active-ban-card').style.display = 'none';
     }
 
-    renderBanHistoryTable(officialBans, active30DayInfractions);
+    renderBanHistoryTable(officialBans, active30DayInfractions, detectedAbandons);
 }
 
 // Render Ban & Infractions Log Table
-function renderBanHistoryTable(officialBans, active30DayInfractions) {
+function renderBanHistoryTable(officialBans, active30DayInfractions, detectedAbandons) {
     const listContainer = document.getElementById('ban-log-rows');
     const badge = document.getElementById('total-bans-badge');
     listContainer.innerHTML = '';
@@ -932,7 +948,18 @@ function renderBanHistoryTable(officialBans, active30DayInfractions) {
     badge.innerText = `${combinedList.length} Record${combinedList.length === 1 ? '' : 's'}`;
 
     if (combinedList.length === 0) {
-        listContainer.innerHTML = `<tr><td colspan="4" class="text-center muted">No active infractions found. Clean record!</td></tr>`;
+        const totalDetected = state.detailedMatches.filter(m => m.isLeaverOrDnf).length;
+        let msg = 'No infractions detected in the last 30 days.';
+        if (totalDetected > 0) {
+            msg = `${totalDetected} warmup abandon(s) detected in match history, but none in the last 30 days.`;
+        }
+        listContainer.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center">
+                    <span class="muted">${msg}</span>
+                    <br><small class="muted" style="font-size:0.8em; opacity:0.6;">ⓘ Note: FACEIT's public API only shows currently active bans — historical bans cannot be retrieved.</small>
+                </td>
+            </tr>`;
         return;
     }
 
@@ -940,7 +967,7 @@ function renderBanHistoryTable(officialBans, active30DayInfractions) {
 
     combinedList.forEach(item => {
         const startDateText = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Unknown';
-        const endDateText = item.endMs ? new Date(item.endMs).toLocaleString() : 'Expired';
+        const endDateText = item.endMs && item.endMs > 0 ? new Date(item.endMs).toLocaleString() : '—';
 
         let statusHtml = '';
         if (item.isOfficial && item.endMs && item.endMs > now) {
@@ -948,7 +975,7 @@ function renderBanHistoryTable(officialBans, active30DayInfractions) {
         } else if (item.isOfficial) {
             statusHtml = `<span class="badge grey">Official Ban</span>`;
         } else {
-            statusHtml = `<span class="status-tag-dnf">Detected Infraction</span>`;
+            statusHtml = `<span class="status-tag-dnf">⚠️ Warmup Abandon</span>`;
         }
 
         const row = document.createElement('tr');
