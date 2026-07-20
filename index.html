@@ -8,7 +8,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=2.0.0">
+    <link rel="stylesheet" href="styles.css?v=2.1.0">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎮</text></svg>">
 </head>
 <body>
     <div class="glow-effect" id="bg-glow"></div>
@@ -47,17 +48,22 @@
             </div>
         </section>
 
-        <!-- Developer API Key Warning Alert (Shown if key is not injected) -->
+        <!-- Developer API Key Warning / Activation Box -->
         <div class="card warning-card spacer-y-md" id="dev-warning-card" style="display: none;">
             <div class="card-body text-center">
-                <div class="warning-large-icon">⚠️</div>
+                <div class="warning-large-icon">🔑</div>
                 <h3>FACEIT API Key Required</h3>
                 <p class="description-text">
-                    To automatically fetch CS2 statistics and ban history, your API Key must be injected by GitHub.
+                    Paste your FACEIT Developer API Key below to activate automatic statistics and ban history tracking:
                 </p>
-                <p class="text-sm muted">
-                    You have already added <code class="code-highlight">FACEIT_API_KEY</code> to your repository secrets.
-                    Once GitHub Actions finishes building the site, this notice will disappear automatically!
+                <div class="api-key-input-box spacer-y-md" style="max-width: 550px; margin: 1rem auto 0 auto;">
+                    <div class="search-bar-row gap-xs">
+                        <input type="password" id="user-api-key-input" placeholder="Paste your FACEIT API Key here..." autocomplete="off">
+                        <button type="button" class="btn btn-primary" onclick="saveUserApiKey()">Activate Key</button>
+                    </div>
+                </div>
+                <p class="text-sm muted spacer-y-sm">
+                    Your key is saved safely inside your browser. You can also inject it via GitHub Secrets (<code class="code-highlight">FACEIT_API_KEY</code>).
                 </p>
             </div>
         </div>
@@ -73,7 +79,7 @@
                 <div class="card-body" id="profile-display">
                     <div class="profile-header">
                         <div class="avatar-container">
-                            <img src="https://images.faceit.com/images/avatars/default_avatar.png" alt="Avatar" id="user-avatar" class="avatar-img">
+                            <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236b7280'%3E%3Cpath d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z'/%3E%3C/svg%3E" alt="Avatar" id="user-avatar" class="avatar-img">
                         </div>
                         <div class="profile-details">
                             <h3 id="user-name">Player</h3>
@@ -232,7 +238,7 @@
                         </thead>
                         <tbody id="ban-log-rows">
                             <tr>
-                                <td colspan="4" class="text-center muted">No ban history found for this player.</td>
+                                <td colspan="4" class="text-center muted">No ban history found for this player. Clean record!</td>
                             </tr>
                         </tbody>
                     </table>
@@ -280,11 +286,11 @@
 
     <footer class="app-footer">
         <div class="container footer-container">
-            <p>Built for CS2 players. Not affiliated with FACEIT.</p>
+            <p>Built for CS2 players. Not affiliated with FACEIT. <button class="btn-text text-sm" onclick="resetApiKey()">Reset Saved API Key</button></p>
             <p>Hosted on GitHub Pages via GitHub Actions.</p>
         </div>
     </footer>
 
-    <script src="app.js?v=2.0.0"></script>
+    <script src="app.js?v=2.1.0"></script>
 </body>
 </html>

@@ -36,16 +36,29 @@ window.addEventListener('DOMContentLoaded', () => {
     
     if (state.nickname) {
         document.getElementById('nickname-search').value = state.nickname;
-        if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__") {
+        if (checkApiKeySetup()) {
             fetchStats();
         }
     }
 });
 
-// Check if API Key has been configured by the owner
+// Retrieve API Key: checks GitHub Actions injected key first, then browser local storage
+function getApiKey() {
+    if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__") {
+        return DEFAULT_API_KEY.trim();
+    }
+    const saved = localStorage.getItem('faceit_api_key_v1');
+    if (saved && saved.trim().length > 0) {
+        return saved.trim();
+    }
+    return null;
+}
+
+// Check if API Key has been configured
 function checkApiKeySetup() {
     const warningCard = document.getElementById('dev-warning-card');
-    const isConfigured = DEFAULT_API_KEY && DEFAULT_API_KEY !== "__FACEIT_API_KEY__";
+    const apiKey = getApiKey();
+    const isConfigured = apiKey !== null && apiKey.length > 0;
     
     if (!isConfigured) {
         warningCard.style.display = 'block';
@@ -57,6 +70,32 @@ function checkApiKeySetup() {
         warningCard.style.display = 'none';
     }
     return isConfigured;
+}
+
+// Save user entered API Key into local storage
+function saveUserApiKey() {
+    const input = document.getElementById('user-api-key-input');
+    const val = input ? input.value.trim() : '';
+    if (!val) {
+        alert('Please enter a valid FACEIT API Key.');
+        return;
+    }
+    localStorage.setItem('faceit_api_key_v1', val);
+    const configured = checkApiKeySetup();
+    if (configured) {
+        if (state.nickname) {
+            fetchStats();
+        } else {
+            alert('API Key activated! Enter your FACEIT Nickname above and click Search Player.');
+        }
+    }
+}
+
+// Reset saved API Key
+function resetApiKey() {
+    localStorage.removeItem('faceit_api_key_v1');
+    checkApiKeySetup();
+    alert('Saved API Key cleared.');
 }
 
 // Load state from localStorage
@@ -86,7 +125,8 @@ function handleSearchSubmit(event) {
 
 // Core Fetching Mechanism (Direct API calls to open.faceit.com)
 async function faceitFetch(endpoint) {
-    if (!DEFAULT_API_KEY || DEFAULT_API_KEY === "__FACEIT_API_KEY__") {
+    const apiKey = getApiKey();
+    if (!apiKey) {
         throw new Error('FACEIT API Key is not configured.');
     }
 
@@ -95,7 +135,7 @@ async function faceitFetch(endpoint) {
     const response = await fetch(targetUrl, {
         method: 'GET',
         headers: {
-            'Authorization': `Bearer ${DEFAULT_API_KEY}`,
+            'Authorization': `Bearer ${apiKey}`,
             'Accept': 'application/json'
         }
     });
@@ -141,8 +181,6 @@ async function fetchStats() {
         document.getElementById('user-country').innerText = playerProfile.country || 'EU';
         if (playerProfile.avatar) {
             document.getElementById('user-avatar').src = playerProfile.avatar;
-        } else {
-            document.getElementById('user-avatar').src = 'https://images.faceit.com/images/avatars/default_avatar.png';
         }
 
         const cs2Game = playerProfile.games && playerProfile.games.cs2;
@@ -329,7 +367,6 @@ function renderBansAndPredictor(bans) {
     const now = Date.now();
     const cutoff30Days = now - ROLLING_WINDOW_MS;
 
-    // Filter bans in the last 30 days
     const activeWindowBans = bans.filter(b => {
         const banStart = parseTimestamp(b.starts_at || b.created_at);
         return banStart >= cutoff30Days;
@@ -338,15 +375,12 @@ function renderBansAndPredictor(bans) {
     const activeCount = activeWindowBans.length;
     document.getElementById('active-infractions-count').innerText = activeCount;
 
-    // Calculate Next Ban Duration
     const nextTimeIndex = Math.min(activeCount, INFRACTION_ESCALATION.length - 1);
     const nextCooldownObj = INFRACTION_ESCALATION[nextTimeIndex];
     document.getElementById('next-cooldown-time').innerText = nextCooldownObj.durationText;
 
-    // Build Escalation Ladder
     buildEscalationLadder(activeCount);
 
-    // Check for currently active queue ban
     let currentActiveBan = null;
     bans.forEach(b => {
         const endMs = parseTimestamp(b.ends_at);
@@ -364,7 +398,6 @@ function renderBansAndPredictor(bans) {
         document.getElementById('active-ban-card').style.display = 'none';
     }
 
-    // Populate Official Ban History Table
     renderBanHistoryTable(bans);
 }
 
