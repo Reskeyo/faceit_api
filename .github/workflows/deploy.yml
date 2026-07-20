@@ -24,30 +24,17 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Inject FACEIT API Key
-        env:
-          SECRET_KEY: ${{ secrets.FACEIT_API_KEY }}
-          VAR_KEY: ${{ vars.FACEIT_API_KEY }}
+      - name: Inject Worker URL into app.js
         run: |
           node -e "
             const fs = require('fs');
-            const key = (process.env.SECRET_KEY || process.env.VAR_KEY || '').trim();
-            console.log('FACEIT_API_KEY length:', key.length);
-            if (key.length === 0) {
-              console.log('WARNING: Key empty in build job.');
-            } else {
-              console.log('SUCCESS: API key successfully injected into app.js!');
-            }
+            const url = 'https://faceit-proxy.dolinskzyyvictor.workers.dev';
+            console.log('Injecting Worker URL:', url);
             let content = fs.readFileSync('app.js', 'utf8');
-            content = content.replaceAll('__FACEIT_API_KEY__', key);
+            content = content.replace('__WORKER_URL__', url);
             fs.writeFileSync('app.js', content, 'utf8');
+            console.log('Done!');
           "
-
-      - name: Deploy to gh-pages branch
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -64,6 +51,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to GitHub Pages Direct
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

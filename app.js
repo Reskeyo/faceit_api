@@ -1,6 +1,7 @@
-// FACEIT Developer API Key configuration placeholder
-// This placeholder will be automatically substituted by GitHub Actions if deploying via GitHub Pages.
-const DEFAULT_API_KEY = "__FACEIT_API_KEY__";
+// Cloudflare Worker proxy URL
+// This is the public URL of your deployed Worker — the API key lives only in the Worker (server-side).
+// Replace this with your actual Worker URL after running: wrangler deploy
+const WORKER_URL = "__WORKER_URL__";
 
 // Application State
 let state = {
@@ -42,26 +43,25 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Retrieve API Key: checks GitHub Actions injected key first, then browser local storage
-function getApiKey() {
-    // Use startsWith check instead of literal comparison —
-    // replaceAll in the build would replace a literal "__FACEIT_API_KEY__" here too,
-    // causing the check to always fail.
-    if (DEFAULT_API_KEY && DEFAULT_API_KEY.length > 0 && !DEFAULT_API_KEY.startsWith('__')) {
-        return DEFAULT_API_KEY.trim();
+// Check if the Cloudflare Worker proxy URL is configured
+function getWorkerUrl() {
+    // If built by GitHub Actions, WORKER_URL is replaced with the real URL.
+    // Otherwise fall back to a localStorage override (for local dev).
+    if (WORKER_URL && WORKER_URL.length > 0 && !WORKER_URL.startsWith('__')) {
+        return WORKER_URL.trim().replace(/\/$/, '');
     }
-    const saved = localStorage.getItem('faceit_api_key_v1');
+    const saved = localStorage.getItem('faceit_worker_url_v1');
     if (saved && saved.trim().length > 0) {
-        return saved.trim();
+        return saved.trim().replace(/\/$/, '');
     }
     return null;
 }
 
-// Check if API Key has been configured
+// Check if the Worker URL has been configured
 function checkApiKeySetup() {
     const warningCard = document.getElementById('dev-warning-card');
-    const apiKey = getApiKey();
-    const isConfigured = apiKey !== null && apiKey.length > 0;
+    const workerUrl = getWorkerUrl();
+    const isConfigured = workerUrl !== null && workerUrl.length > 0;
     
     if (!isConfigured) {
         warningCard.style.display = 'block';
@@ -75,21 +75,21 @@ function checkApiKeySetup() {
     return isConfigured;
 }
 
-// Save user entered API Key into local storage
+// Save user entered Worker URL into local storage (for local dev/override)
 function saveUserApiKey() {
     const input = document.getElementById('user-api-key-input');
     const val = input ? input.value.trim() : '';
     if (!val) {
-        alert('Please enter a valid FACEIT API Key.');
+        alert('Please enter a valid Worker URL.');
         return;
     }
-    localStorage.setItem('faceit_api_key_v1', val);
+    localStorage.setItem('faceit_worker_url_v1', val);
     const configured = checkApiKeySetup();
     if (configured) {
         if (state.nickname) {
             fetchStats();
         } else {
-            alert('API Key activated! Enter your FACEIT Nickname above and click Search Player.');
+            alert('Worker URL saved! Enter your FACEIT Nickname above and click Search Player.');
         }
     }
 }
@@ -126,48 +126,27 @@ function handleSearchSubmit(event) {
     }
 }
 
-// Core Fetching Mechanism with Automatic Authorization Format Fallback
+// Core Fetching Mechanism — routes through Cloudflare Worker proxy (key stays server-side)
 async function faceitFetch(endpoint) {
-    const apiKey = getApiKey();
-    if (!apiKey) {
-        throw new Error('FACEIT API Key is not configured.');
+    const workerUrl = getWorkerUrl();
+    if (!workerUrl) {
+        throw new Error('Proxy Worker URL is not configured.');
     }
 
-    const targetUrl = `https://open.faceit.com/data/v4/${endpoint}`;
-    
-    // Attempt 1: Standard Bearer Token format
-    let authHeader = apiKey.trim();
-    if (!authHeader.toLowerCase().startsWith('bearer ')) {
-        authHeader = `Bearer ${authHeader}`;
-    }
+    const targetUrl = `${workerUrl}/faceit/${endpoint}`;
 
-    let response = await fetch(targetUrl, {
+    const response = await fetch(targetUrl, {
         method: 'GET',
-        headers: {
-            'Authorization': authHeader,
-            'Accept': 'application/json'
-        }
+        headers: { 'Accept': 'application/json' }
     });
-
-    // Attempt 2: If 401 Unauthorized, retry with raw token (some FACEIT key types require raw string without 'Bearer ')
-    if (response.status === 401 && authHeader.toLowerCase().startsWith('bearer ')) {
-        const rawKey = apiKey.trim().replace(/^bearer\s+/i, '');
-        response = await fetch(targetUrl, {
-            method: 'GET',
-            headers: {
-                'Authorization': rawKey,
-                'Accept': 'application/json'
-            }
-        });
-    }
 
     if (!response.ok) {
         if (response.status === 401) {
-            throw new Error('Unauthorized: The configured FACEIT API Key is invalid.');
+            throw new Error('Unauthorized: The API Key stored in the Worker is invalid.');
         } else if (response.status === 404) {
             throw new Error('Not Found: Player or resource could not be found.');
         } else {
-            throw new Error(`FACEIT API Error (Status ${response.status})`);
+            throw new Error(`Proxy Error (Status ${response.status})`);
         }
     }
 
