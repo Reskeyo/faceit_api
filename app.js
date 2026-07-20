@@ -44,7 +44,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Retrieve API Key: checks GitHub Actions injected key first, then browser local storage
 function getApiKey() {
-    if (DEFAULT_API_KEY && DEFAULT_API_KEY !== "3563d522-b38e-464a-b65f-1e13ef363871") {
+    // Use startsWith check instead of literal comparison —
+    // replaceAll in the build would replace a literal "3563d522-b38e-464a-b65f-1e13ef363871" here too,
+    // causing the check to always fail.
+    if (DEFAULT_API_KEY && DEFAULT_API_KEY.length > 0 && !DEFAULT_API_KEY.startsWith('__')) {
         return DEFAULT_API_KEY.trim();
     }
     const saved = localStorage.getItem('faceit_api_key_v1');
