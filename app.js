@@ -244,7 +244,6 @@ async function fetchStats() {
             const hsPctRaw = getStat(lifetime, ['Average Headshots %', 'Headshots %', 'Headshot %'], '0%');
             const hsPct = hsPctRaw.includes('%') ? hsPctRaw : `${hsPctRaw}%`;
             
-            // Advanced Combat Stats (with segment fallback if lifetime omits)
             let totalKills = getStat(lifetime, ['Total Kills', 'Kills']);
             if (!totalKills || totalKills === '-') {
                 totalKills = aggregateSegmentStat(segments, 'Kills');
@@ -257,7 +256,6 @@ async function fetchStats() {
 
             const longestStreak = getStat(lifetime, ['Longest Win Streak', 'Max Win Streak'], '0');
             
-            // Multikills (3K, 4K, 5K/Aces)
             let k3 = getStat(lifetime, ['Triple Kills', '3K', '3 Kills']);
             if (!k3 || k3 === '-') k3 = aggregateSegmentStat(segments, 'Triple Kills');
 
@@ -267,7 +265,6 @@ async function fetchStats() {
             let k5 = getStat(lifetime, ['Penta Kills', 'Aces', '5K', '5 Kills']);
             if (!k5 || k5 === '-') k5 = aggregateSegmentStat(segments, 'Penta Kills');
 
-            // Render stats to DOM
             document.getElementById('stat-matches').innerText = matches;
             document.getElementById('stat-winrate').innerText = winRate;
             document.getElementById('stat-kd').innerText = kd;
@@ -295,15 +292,14 @@ async function fetchStats() {
                 streakEl.innerText = '0';
             }
 
-            // Render Map Stats Table
             if (segments.length > 0) {
                 renderMapStatsTable(segments);
                 renderMapWinrateChart(segments);
             }
         }
 
-        // Step 3: Complete 30-Day Match History Scan
-        await fetchMatchHistoryComplete30Days(player_id);
+        // Step 3: Deep Consecutive Match History Scan (Scans 100+ matches to track rolling 30-day consecutive escalation chains)
+        await fetchMatchHistoryDeepConsecutiveScan(player_id);
 
         // Step 4: Fetch Bans & Run Combined Consecutive 30-Day Escalation Detector
         await fetchPlayerBans(player_id);
@@ -320,9 +316,9 @@ async function fetchStats() {
     }
 }
 
-// Algorithmic Leaver / Disconnect Inspector
+// Algorithmic Leaver / Disconnect / Warmup noShow Inspector
 function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
-    if (!pStats) return { isLeaver: false, reason: '' };
+    if (!pStats) return { isLeaver: true, reason: 'Warmup noShow / Server Cancelled' };
 
     // Check direct known properties
     if (pStats.Leaver === '1' || pStats.leaver === '1' || pStats.Leaver === 'true') {
@@ -369,30 +365,25 @@ function checkPlayerLeaverStatus(pStats, roundStats, matchResults) {
     return { isLeaver: false, reason: '' };
 }
 
-// Complete 30-Day Match History Scanner
-async function fetchMatchHistoryComplete30Days(player_id) {
+// Deep Consecutive Match History Scanner (Scans up to 150 matches to detect rolling consecutive escalation chains)
+async function fetchMatchHistoryDeepConsecutiveScan(player_id) {
     state.detailedMatches = [];
     state.matchOffset = 0;
     state.hasMoreMatches = true;
 
-    const cutoff30Days = Date.now() - ROLLING_WINDOW_MS;
+    // We scan at least 100 matches to trace consecutive 30-day escalation reset rules
+    const targetScanCount = 100;
     let offset = 0;
-    const limit = 100;
-    let reachedCutoff = false;
+    const limit = 50;
 
-    while (!reachedCutoff) {
+    while (offset < targetScanCount) {
         try {
-            const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=${limit}&offset=${offset}`);
+            const historyData = await faceitFetch(`players/${player_id}/history?limit=${limit}&offset=${offset}`);
             const items = historyData.items || [];
 
             if (items.length === 0) {
                 state.hasMoreMatches = false;
                 break;
-            }
-
-            const oldestInBatch = items[items.length - 1].finished_at * 1000;
-            if (oldestInBatch < cutoff30Days) {
-                reachedCutoff = true;
             }
 
             const detailPromises = items.map(match => {
@@ -440,7 +431,7 @@ async function loadMoreMatches() {
     const offset = state.matchOffset;
 
     try {
-        const historyData = await faceitFetch(`players/${player_id}/history?game=cs2&limit=${limit}&offset=${offset}`);
+        const historyData = await faceitFetch(`players/${player_id}/history?limit=${limit}&offset=${offset}`);
         const items = historyData.items || [];
 
         if (items.length === 0) {
@@ -478,7 +469,8 @@ async function loadMoreMatches() {
 // Parse Raw Match Array into Unified Match Objects
 function parseMatchBatch(batchDetailed, player_id) {
     return batchDetailed.map(({ match, details }) => {
-        const dateObj = new Date(match.finished_at * 1000);
+        const timestampMs = (match.finished_at || match.started_at || match.created_at || 0) * 1000;
+        const dateObj = new Date(timestampMs);
         const date = dateObj.toLocaleDateString();
         const time = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         
@@ -523,17 +515,20 @@ function parseMatchBatch(batchDetailed, player_id) {
                 dnfReason = 'Player Left Match';
             }
         } else {
+            // Match has NO round stats (Warmup noShow / Server Cancelled before round 1)
             const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
             const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
             score = `${f1Score} - ${f2Score}`;
             result = (match.results && match.results.winner === 'faction1') ? 'W' : 'L';
-            isLeaverOrDnf = false;
-            dnfReason = '';
+            
+            // Warmup noShow flag: Cancelled/aborted match without round stats
+            isLeaverOrDnf = true;
+            dnfReason = 'Warmup noShow / Server Cancelled';
         }
 
         return {
             match_id: match.match_id,
-            timestamp: match.finished_at * 1000,
+            timestamp: timestampMs,
             date,
             time,
             mapName,
@@ -552,7 +547,6 @@ function parseMatchBatch(batchDetailed, player_id) {
 
 // Render Overview Quick Matches & Full Filterable Match History Table
 function renderMatchHistoryTables(matches) {
-    // 1. Overview Table (Top 5)
     const overviewList = document.getElementById('overview-matches-list');
     overviewList.innerHTML = '';
 
@@ -576,7 +570,6 @@ function renderMatchHistoryTables(matches) {
         });
     }
 
-    // 2. Full Match History Table
     applyMatchFilters();
 }
 
