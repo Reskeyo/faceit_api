@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -33,7 +33,7 @@ jobs:
             const key = (process.env.SECRET_KEY || process.env.VAR_KEY || '').trim();
             console.log('FACEIT_API_KEY length:', key.length);
             if (key.length === 0) {
-              console.log('WARNING: Neither secrets.FACEIT_API_KEY nor vars.FACEIT_API_KEY was found!');
+              console.log('WARNING: Neither secrets.FACEIT_API_KEY nor vars.FACEIT_API_KEY was found in build job.');
             } else {
               console.log('SUCCESS: API key successfully injected into app.js!');
             }
@@ -56,6 +56,13 @@ jobs:
         with:
           path: '.'
 
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages Direct
         id: deployment
         uses: actions/deploy-pages@v4
