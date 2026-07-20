@@ -159,7 +159,27 @@ async function faceitFetch(endpoint) {
     return response.json();
 }
 
-// Robust Stat Value Helper (Searches case-insensitively for key aliases)
+// Controlled Chunked Fetcher — Prevents Rate-Limiting / Throttling Drops
+async function fetchMatchStatsInChunks(items, chunkSize = 5) {
+    const results = [];
+    for (let i = 0; i < items.length; i += chunkSize) {
+        const chunk = items.slice(i, i + chunkSize);
+        const promises = chunk.map(match => {
+            return faceitFetch(`matches/${match.match_id}/stats`)
+                .then(details => ({ match, details }))
+                .catch(err => ({ match, details: null }));
+        });
+        const chunkResults = await Promise.all(promises);
+        results.push(...chunkResults);
+
+        if (i + chunkSize < items.length) {
+            await new Promise(r => setTimeout(r, 30));
+        }
+    }
+    return results;
+}
+
+// Robust Stat Value Helper
 function getStat(statsObj, aliases, defaultValue = null) {
     if (!statsObj) return defaultValue;
     const keys = Object.keys(statsObj);
@@ -174,7 +194,7 @@ function getStat(statsObj, aliases, defaultValue = null) {
     return defaultValue;
 }
 
-// Deep Stat Aggregator (Fall back to segment aggregation if lifetime omits key)
+// Deep Stat Aggregator
 function aggregateSegmentStat(segments, statKey) {
     if (!segments || segments.length === 0) return '0';
     let total = 0;
@@ -196,7 +216,6 @@ async function fetchStats() {
     const nickname = state.nickname;
     if (!nickname) return;
 
-    // Show Premium Loader & Tab Bar
     document.getElementById('global-loading').style.display = 'block';
     document.getElementById('loading-text').innerText = `Fetching profile & scanning match history for ${nickname}...`;
     document.getElementById('app-nav-tabs').style.display = 'flex';
@@ -209,7 +228,6 @@ async function fetchStats() {
         state.player = playerProfile;
         const player_id = playerProfile.player_id;
         
-        // Map profile details
         document.getElementById('user-name').innerText = playerProfile.nickname || nickname;
         document.getElementById('user-country').innerText = playerProfile.country ? playerProfile.country.toUpperCase() : 'EU';
         if (playerProfile.avatar) {
@@ -298,13 +316,12 @@ async function fetchStats() {
             }
         }
 
-        // Step 3: Deep Consecutive Match History Scan
+        // Step 3: Deep Consecutive Match History Scan with Chunked Fetcher
         await fetchMatchHistoryDeepConsecutiveScan(player_id);
 
         // Step 4: Fetch Bans & Run Combined Consecutive 30-Day Escalation Detector
         await fetchPlayerBans(player_id);
 
-        // Hide Loader & Show Active Tab
         document.getElementById('global-loading').style.display = 'none';
         switchTab(state.activeTab);
 
@@ -362,7 +379,7 @@ function checkPlayerLeaverStatus(pStats, roundStats) {
     return { isLeaver: false, reason: '' };
 }
 
-// Deep Match History Scanner
+// Deep Match History Scanner — uses controlled chunking to prevent API throttling
 async function fetchMatchHistoryDeepConsecutiveScan(player_id) {
     state.detailedMatches = [];
     state.matchOffset = 0;
@@ -382,13 +399,8 @@ async function fetchMatchHistoryDeepConsecutiveScan(player_id) {
                 break;
             }
 
-            const detailPromises = items.map(match => {
-                return faceitFetch(`matches/${match.match_id}/stats`)
-                    .then(details => ({ match, details }))
-                    .catch(err => ({ match, details: null }));
-            });
-
-            const batchDetailed = await Promise.all(detailPromises);
+            // Fetch match stats in controlled chunks of 5 with 30ms pause between chunks
+            const batchDetailed = await fetchMatchStatsInChunks(items, 5);
             const parsedBatch = parseMatchBatch(batchDetailed, player_id);
 
             state.detailedMatches.push(...parsedBatch);
@@ -436,13 +448,7 @@ async function loadMoreMatches() {
             return;
         }
 
-        const detailPromises = items.map(match => {
-            return faceitFetch(`matches/${match.match_id}/stats`)
-                .then(details => ({ match, details }))
-                .catch(err => ({ match, details: null }));
-        });
-
-        const batchDetailed = await Promise.all(detailPromises);
+        const batchDetailed = await fetchMatchStatsInChunks(items, 5);
         const parsedBatch = parseMatchBatch(batchDetailed, player_id);
 
         state.detailedMatches.push(...parsedBatch);
@@ -507,10 +513,9 @@ function parseMatchBatch(batchDetailed, player_id) {
             }
 
             if (!foundPlayer) {
-                isLeaverOrDnf = false; // Player finished but not listed in team stats
+                isLeaverOrDnf = false;
             }
         } else {
-            // Match has no round stats -> Completed match without round stats
             const f1Score = (match.results && match.results.score) ? match.results.score.faction1 : 0;
             const f2Score = (match.results && match.results.score) ? match.results.score.faction2 : 0;
             score = `${f1Score} - ${f2Score}`;
